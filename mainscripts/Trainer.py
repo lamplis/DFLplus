@@ -248,7 +248,7 @@ def main(**kwargs):
         update_preview = False
         is_showing = False
         is_waiting_preview = False
-        show_last_history_iters_count = 0
+        show_last_history_iters_count = 500
         iter = 0
         while True:
             if not c2s.empty():
@@ -346,7 +346,7 @@ def main(**kwargs):
                 elif show_last_history_iters_count == 50000:
                     show_last_history_iters_count = 100000
                 elif show_last_history_iters_count == 100000:
-                    show_last_history_iters_count = 0
+                    show_last_history_iters_count = 500
                 update_preview = True
             elif key == ord(' '):
                 selected_preview = (selected_preview + 1) % len(previews)
