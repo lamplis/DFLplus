@@ -17,6 +17,7 @@ from core import imagelib
 from core import mathlib
 from facelib import FaceType, LandmarksProcessor
 from core.interact import interact as io
+from core.interact.keyboard_layout import is_azerty
 from core.joblib import Subprocessor
 from core.leras import nn
 from core import pathex
@@ -326,6 +327,28 @@ class ExtractSubprocessor(Subprocessor):
         super().__init__('Extractor', ExtractSubprocessor.Cli,
                              999999 if type == 'landmarks-manual' or DEBUG else 120)
 
+    def _manual_help_lines(self):
+        # These are the characters the handlers read. On AZERTY they are the
+        # keycaps themselves: A is the top-left letter, Q is the next row,
+        # comma sits beside N, and the period is Maj on the semicolon key.
+        if is_azerty():
+            return [
+                '[Clic gauche] verrouiller. [Molette] taille du cadre',
+                '[Clic droit] rectangle du visage a la main',
+                '[Entree] confirmer    [Espace] passer l image',
+                '[,] image precedente    [.] (Maj + ;) image suivante',
+                '[Q] passer les images restantes',
+                '[A] precision on/off    [H] masquer cette aide',
+            ]
+        return [
+            '[L Mouse click] - lock/unlock selection. [Mouse wheel] - change rect',
+            '[R Mouse Click] - manual face rectangle',
+            '[Enter] / [Space] - confirm / skip frame',
+            '[,] [.]- prev frame, next frame. [Q] - skip remaining frames',
+            '[a] - accuracy on/off (more fps)',
+            '[h] - hide this help',
+        ]
+
     #override
     def on_clients_initialized(self):
         if self.type == 'landmarks-manual':
@@ -413,13 +436,7 @@ class ExtractSubprocessor(Subprocessor):
                         self.text_lines_img = self.cache_text_lines_img[1]
                     else:
                         self.text_lines_img = (imagelib.get_draw_text_lines ( self.image, sh,
-                                                        [   '[L Mouse click] - lock/unlock selection. [Mouse wheel] - change rect',
-                                                            '[R Mouse Click] - manual face rectangle',
-                                                            '[Enter] / [Space] - confirm / skip frame',
-                                                            '[,] [.]- prev frame, next frame. [Q] - skip remaining frames',
-                                                            '[a] - accuracy on/off (more fps)',
-                                                            '[h] - hide this help'
-                                                        ], (1, 1, 1) )*255).astype(np.uint8)
+                                                        self._manual_help_lines(), (1, 1, 1) )*255).astype(np.uint8)
 
                         self.cache_text_lines_img = (sh, self.text_lines_img)
 

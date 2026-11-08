@@ -151,6 +151,10 @@ def reinhard_color_transfer(target : np.ndarray, source : np.ndarray, target_mas
 
     reference: Color Transfer between Images https://www.cs.tau.ac.il/~turkel/imagepapers/ColorTransfer.pdf
     """
+    # OpenCV 5 accepts 8-bit and float32 only. Predictions and numexpr
+    # results arrive as float64.
+    source = np.ascontiguousarray(source, dtype=np.float32)
+    target = np.ascontiguousarray(target, dtype=np.float32)
     source = cv2.cvtColor(source, cv2.COLOR_BGR2LAB)
     target = cv2.cvtColor(target, cv2.COLOR_BGR2LAB)
 
@@ -184,7 +188,8 @@ def reinhard_color_transfer(target : np.ndarray, source : np.ndarray, target_mas
     np.clip(target_a, -127, 127, out=target_a)
     np.clip(target_b, -127, 127, out=target_b)
 
-    return cv2.cvtColor(np.stack([target_l,target_a,target_b], -1), cv2.COLOR_LAB2BGR)
+    lab = np.stack([target_l, target_a, target_b], -1).astype(np.float32, copy=False)
+    return cv2.cvtColor(np.ascontiguousarray(lab), cv2.COLOR_LAB2BGR)
 
 
 def linear_color_transfer(target_img, source_img, mode='pca', eps=1e-5):

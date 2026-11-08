@@ -761,7 +761,7 @@ class QCanvasOperator(QWidget):
         if not self.initialized:
             return
         key = ev.key()
-        key_mods = int(ev.modifiers())
+        key_mods = ev.modifiers()
         if self.op_mode == OpMode.DRAW_PTS:
             self.set_view_lock(ViewLock.CENTER if key_mods == Qt.KeyboardModifier.ShiftModifier else ViewLock.NONE )
         elif self.op_mode == OpMode.EDIT_PTS:
@@ -771,7 +771,7 @@ class QCanvasOperator(QWidget):
         if not self.initialized:
             return
         key = ev.key()
-        key_mods = int(ev.modifiers())
+        key_mods = ev.modifiers()
         if self.op_mode == OpMode.DRAW_PTS:
             self.set_view_lock(ViewLock.CENTER if key_mods == Qt.KeyboardModifier.ShiftModifier else ViewLock.NONE )
         elif self.op_mode == OpMode.EDIT_PTS:
@@ -916,7 +916,6 @@ class QCanvasOperator(QWidget):
         if not self.initialized:
             return
 
-        mods = int(ev.modifiers())
         delta = ev.angleDelta()
 
         cli_pt = QPoint_to_np(ev.pos())

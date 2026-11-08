@@ -85,7 +85,7 @@ def trainerThread (s2c, c2s, e,
                 if is_reached_goal:
                     io.log_info('Model already trained to target iteration. You can use preview.')
                 else:
-                    io.log_info('Starting. Target iteration: %d. Press "Enter" to stop training and save model.' % ( model.get_target_iter()  ) )
+                    io.log_info('Starting. Target iteration: %d. Training is running. Press Enter in this terminal only to stop and save.' % ( model.get_target_iter()  ) )
             else:
                 io.log_info('Starting. Press "Enter" to stop training and save model.')
 
@@ -151,9 +151,9 @@ def trainerThread (s2c, c2s, e,
                                 loss_string += "[%.4f]" % (loss_value)
 
                             if io.is_colab():
-                                io.log_info ('\r' + loss_string, end='')
+                                io.log_info ('\r' + loss_string, end='', flush=True)
                             else:
-                                io.log_info (loss_string, end='\r')
+                                io.log_info (loss_string, end='\r', flush=True)
 
                         if model.get_iter() == 1:
                             model_save()
@@ -213,13 +213,24 @@ def trainerThread (s2c, c2s, e,
 
 
 def _watch_stdin_for_enter(s2c):
-    # The trainer tells the user to press Enter. That key is also checked on
-    # the preview window, but OpenCV's Qt window does not receive it here.
-    # A blank line from the terminal is the stop signal the message describes.
+    # The trainer tells the user to press Enter. OpenCV's Qt window does not
+    # receive that key here, so a new line typed in this terminal is the stop
+    # signal. A newline still sitting in the buffer from the model menus, or
+    # EOF after those menus close their stdin reader, is not that signal.
     try:
+        import select
+        if sys.stdin.isatty():
+            while True:
+                ready, _, _ = select.select([sys.stdin], [], [], 0)
+                if not ready:
+                    break
+                if sys.stdin.readline() == '':
+                    return
         while True:
             line = sys.stdin.readline()
-            if line == '' or line in ('\n', '\r\n', '\r'):
+            if line == '':
+                return
+            if line in ('\n', '\r\n', '\r'):
                 s2c.put( {'op': 'close'} )
                 return
     except Exception:
@@ -263,9 +274,42 @@ def main(**kwargs):
         update_preview = False
         is_showing = False
         is_waiting_preview = False
-        show_last_history_iters_count = 0
+        show_last_history_iters_count = 5000
         iter = 0
+        shown_body = None
+        updating_phase = 0
+        # Space and the arrow keys repeat. One press must move a single preview.
+        nav_held_key = None
+        # Qt Key_Left/Right, plus the X11 keysyms if they arrive whole.
+        key_left = (16777234, 65361)
+        key_right = (16777236, 65363)
+
+        def show_cached_frame(updating):
+            # The loss curve stays as last drawn. Only the header is rewritten.
+            w = shown_body.shape[1]
+            c = shown_body.shape[2]
+            status = ''
+            if updating:
+                status = '  updating' + ('.' * ((updating_phase % 3) + 1))
+            selected_preview_name = previews[selected_preview][0]
+            head_lines = [
+                '[s]:save [b]:backup [p]:update [l]:history [enter]:exit',
+                '[left]/[right] preview  [space] next',
+                'Preview: "%s" [%d/%d]%s' % (selected_preview_name, selected_preview+1, len(previews), status)
+                ]
+            head_line_height = 15
+            head_height = len(head_lines) * head_line_height
+            head = np.ones ( (head_height,w,c) ) * 0.1
+            for i in range(0, len(head_lines)):
+                t = i*head_line_height
+                b = (i+1)*head_line_height
+                head[t:b, 0:w] += imagelib.get_text_image (  (head_line_height,w,c) , head_lines[i], color=[0.8]*c )
+            frame = np.concatenate ( [head, shown_body], axis=0 )
+            frame = np.clip(frame, 0, 1)
+            io.show_image( wnd_name, (frame*255).astype(np.uint8) )
+
         while True:
+            did_full_draw = False
             if not c2s.empty():
                 input = c2s.get()
                 op = input['op']
@@ -301,28 +345,12 @@ def main(**kwargs):
 
             if update_preview:
                 update_preview = False
+                did_full_draw = True
 
-                selected_preview_name = previews[selected_preview][0]
                 selected_preview_rgb = previews[selected_preview][1]
                 (h,w,c) = selected_preview_rgb.shape
 
-                # HEAD
-                head_lines = [
-                    '[s]:save [b]:backup [enter]:exit',
-                    '[p]:update [space]:next preview [l]:change history range',
-                    'Preview: "%s" [%d/%d]' % (selected_preview_name,selected_preview+1, len(previews) )
-                    ]
-                head_line_height = 15
-                head_height = len(head_lines) * head_line_height
-                head = np.ones ( (head_height,w,c) ) * 0.1
-
-                for i in range(0, len(head_lines)):
-                    t = i*head_line_height
-                    b = (i+1)*head_line_height
-                    head[t:b, 0:w] += imagelib.get_text_image (  (head_line_height,w,c) , head_lines[i], color=[0.8]*c )
-
-                final = head
-
+                body = selected_preview_rgb
                 if loss_history is not None:
                     if show_last_history_iters_count == 0:
                         loss_history_to_show = loss_history
@@ -330,16 +358,26 @@ def main(**kwargs):
                         loss_history_to_show = loss_history[-show_last_history_iters_count:]
 
                     lh_img = models.ModelBase.get_loss_history_preview(loss_history_to_show, iter, w, c)
-                    final = np.concatenate ( [final, lh_img], axis=0 )
+                    body = np.concatenate ( [lh_img, selected_preview_rgb], axis=0 )
 
-                final = np.concatenate ( [final, selected_preview_rgb], axis=0 )
-                final = np.clip(final, 0, 1)
-
-                io.show_image( wnd_name, (final*255).astype(np.uint8) )
+                shown_body = body
+                show_cached_frame(is_waiting_preview)
                 is_showing = True
+            elif is_waiting_preview and shown_body is not None:
+                show_cached_frame(True)
+                updating_phase += 1
 
             key_events = io.get_key_events(wnd_name)
             key, chr_key, ctrl_pressed, alt_pressed, shift_pressed = key_events[-1] if len(key_events) > 0 else (0,0,False,False,False)
+
+            if key == 0:
+                nav_held_key = None
+
+            nav_delta = 0
+            if key in key_left:
+                nav_delta = -1
+            elif key in key_right or key == ord(' '):
+                nav_delta = 1
 
             # Qt reports Return/Enter as key codes, not as newline characters.
             if key in (ord('\n'), ord('\r'), 13, 10, 16777220, 16777221):
@@ -351,7 +389,10 @@ def main(**kwargs):
             elif key == ord('p'):
                 if not is_waiting_preview:
                     is_waiting_preview = True
+                    updating_phase = 0
                     s2c.put ( {'op': 'preview'} )
+                    if shown_body is not None and not did_full_draw:
+                        show_cached_frame(True)
             elif key == ord('l'):
                 if show_last_history_iters_count == 0:
                     show_last_history_iters_count = 5000
@@ -364,8 +405,9 @@ def main(**kwargs):
                 elif show_last_history_iters_count == 100000:
                     show_last_history_iters_count = 0
                 update_preview = True
-            elif key == ord(' '):
-                selected_preview = (selected_preview + 1) % len(previews)
+            elif nav_delta != 0 and previews is not None and nav_held_key != key:
+                nav_held_key = key
+                selected_preview = (selected_preview + nav_delta) % len(previews)
                 update_preview = True
 
             try:

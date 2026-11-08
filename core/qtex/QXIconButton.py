@@ -65,19 +65,17 @@ class QXIconButton(QPushButton):
             if self.repeat_timer is not None:
                 self.repeat_timer.setInterval(self.repeat_delay)
         
-    def on_keyPressEvent(self, ev):              
-        key = ev.nativeVirtualKey()
+    def on_keyPressEvent(self, ev):
         if ev.isAutoRepeat():
             return
-            
+
         if self.seq is not None:
-            if key == self.seq[0]:
+            if ev.key() == self.seq[0].key():
                 self.action(is_pressed=True)
 
     def on_keyReleaseEvent(self, ev):
-        key = ev.nativeVirtualKey()
         if ev.isAutoRepeat():
             return
         if self.seq is not None:
-            if key == self.seq[0]:
+            if ev.key() == self.seq[0].key():
                 self.action(is_pressed=False)

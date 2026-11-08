@@ -10,6 +10,7 @@ import numpy as np
 from core import imagelib, pathex
 from core.cv2ex import *
 from core.interact import interact as io
+from core.interact.keyboard_layout import is_azerty
 from core.joblib import Subprocessor
 from merger import MergeFaceAvatar, MergeMasked, MergerConfig
 
@@ -287,14 +288,19 @@ class InteractiveMergerSubprocessor(Subprocessor):
         self.is_interactive_quitting = not self.is_interactive
 
         if self.is_interactive:
+            masked_help = cv2_imread ( str(Path(__file__).parent / 'gfx' / 'help_merger_masked.jpg') )
+            if is_azerty():
+                from merger.azerty_legend import render_masked_help
+                masked_help = render_masked_help()
             help_images = {
-                    MergerConfig.TYPE_MASKED :      cv2_imread ( str(Path(__file__).parent / 'gfx' / 'help_merger_masked.jpg') ),
+                    MergerConfig.TYPE_MASKED :      masked_help,
                     MergerConfig.TYPE_FACE_AVATAR : cv2_imread ( str(Path(__file__).parent / 'gfx' / 'help_merger_face_avatar.jpg') ),
                 }
 
             self.main_screen = Screen(initial_scale_to_width=1368, image=None, waiting_icon=True)
             self.help_screen = Screen(initial_scale_to_height=768, image=help_images[self.merger_config.type], waiting_icon=False)
             self.screen_manager = ScreenManager( "Merger", [self.main_screen, self.help_screen], capture_keys=True )
+            io.use_physical_keys("Merger")
             self.screen_manager.set_current (self.help_screen)
             self.screen_manager.show_current()
 
@@ -460,6 +466,7 @@ class InteractiveMergerSubprocessor(Subprocessor):
                                     go_next_frame_overriding_cfg = True
                                 else:
                                     go_last_frame_overriding_cfg = True
+                                    self.process_remain_frames = True
 
                         elif chr_key == '-':
                             self.screen_manager.get_current().diff_scale(-0.1)

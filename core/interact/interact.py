@@ -1,3 +1,5 @@
+import contextlib
+import ctypes
 import multiprocessing
 import os
 import subprocess
@@ -12,6 +14,7 @@ import numpy as np
 from tqdm import tqdm
 
 from core import stdex
+from .keyboard_layout import is_azerty, translate_azerty
 
 try:
     import IPython #if success we are in colab
@@ -37,6 +40,11 @@ class InteractBase(object):
         self.named_windows = {}
         self.capture_mouse_windows = {}
         self.capture_keys_windows = {}
+        # Windows whose legend is a picture of key positions. Their keys are
+        # translated from AZERTY keycaps to the QWERTY characters the handlers
+        # expect. Other windows, such as the manual extractor, name the
+        # characters directly and must receive them unchanged.
+        self.physical_key_windows = set()
         self.mouse_events = {}
         self.key_events = {}
         self.pg_bar = None
@@ -44,6 +52,11 @@ class InteractBase(object):
         self.error_log_line_prefix = '/!\\ '
 
         self.process_messages_callbacks = {}
+        # Model calls are registered on this thread. They run on a side thread
+        # so the window thread can keep answering GNOME's ping.
+        self._callback_owner = None
+        self._callback_owner_pid = None
+        self._callback_thread = None
 
     def is_support_windows(self):
         return False
@@ -75,10 +88,10 @@ class InteractBase(object):
     def on_wait_any_key(self):
         raise NotImplemented
 
-    def log_info(self, msg, end='\n'):
+    def log_info(self, msg, end='\n', flush=False):
         if self.pg_bar is not None:
             print ("\n")
-        print (msg, end=end)
+        print (msg, end=end, flush=flush)
 
     def log_err(self, msg, end='\n'):
         if self.pg_bar is not None:
@@ -98,6 +111,7 @@ class InteractBase(object):
             self.named_windows = {}
             self.capture_mouse_windows = {}
             self.capture_keys_windows = {}
+            self.physical_key_windows = set()
             self.mouse_events = {}
             self.key_events = {}
             self.focus_wnd_name = None
@@ -115,6 +129,8 @@ class InteractBase(object):
 
             if wnd_name in self.capture_keys_windows:
                 self.capture_keys_windows.pop(wnd_name)
+
+            self.physical_key_windows.discard(wnd_name)
 
             if wnd_name in self.mouse_events:
                 self.mouse_events.pop(wnd_name)
@@ -146,6 +162,12 @@ class InteractBase(object):
                 self.on_capture_keys(wnd_name)
             else: print("capture_keys: already set for window ", wnd_name)
         else: print("capture_keys: named_window ", wnd_name, " not found.")
+
+    def use_physical_keys(self, wnd_name):
+        """Translate AZERTY keycaps to the QWERTY characters this window's handlers expect."""
+        if wnd_name in self.named_windows:
+            self.physical_key_windows.add(wnd_name)
+        else: print("use_physical_keys: named_window ", wnd_name, " not found.")
 
     def progress_bar(self, desc, total, leave=True, initial=0):
         if self.pg_bar is None:
@@ -179,13 +201,39 @@ class InteractBase(object):
             self.process_messages_callbacks[tid] = callbacks
 
         callbacks.append ( func )
+        self._callback_owner = tid
+        self._callback_owner_pid = os.getpid()
+
+    def _ensure_callback_thread(self):
+        # Start only in the process that registered the callbacks, and only
+        # once workers have been forked. A thread alive across fork deadlocks.
+        if self._callback_thread is not None or self._callback_owner is None:
+            return
+        if os.getpid() != self._callback_owner_pid:
+            return
+        owner = self._callback_owner
+
+        def loop():
+            # TensorFlow's default graph is per thread. The session and its
+            # placeholders were built on the main thread. New models, such as
+            # the face enhancer, must be built in that same graph.
+            from core.leras import nn
+            graph = nn.tf_sess.graph if nn.tf_sess is not None else None
+            context = graph.as_default() if graph is not None else contextlib.nullcontext()
+            with context:
+                while True:
+                    callbacks = self.process_messages_callbacks.get(owner)
+                    if callbacks:
+                        for func in list(callbacks):
+                            func()
+                    time.sleep(0.002)
+
+        thread = threading.Thread(target=loop, name="dfl-model-calls", daemon=True)
+        thread.start()
+        self._callback_thread = thread
 
     def process_messages(self, sleep_time=0):
-        callbacks = self.process_messages_callbacks.get(threading.get_ident(), None)
-        if callbacks is not None:
-            for func in callbacks:
-                func()
-
+        self._ensure_callback_thread()
         self.on_process_messages(sleep_time)
 
     def wait_any_key(self):
@@ -493,6 +541,182 @@ def _system_font_dir():
     return _system_font_dir_cache
 
 
+class _XClassHint(ctypes.Structure):
+    _fields_ = [("res_name", ctypes.c_char_p), ("res_class", ctypes.c_char_p)]
+
+
+def _set_x11_window_class(title):
+    """Give the OpenCV window a WM_CLASS. Without one, GNOME calls it "unknown"."""
+    try:
+        x11 = ctypes.CDLL("libX11.so.6")
+    except OSError:
+        return
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11.XDefaultRootWindow.restype = ctypes.c_ulong
+    x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    x11.XQueryTree.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong,
+        ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong)), ctypes.POINTER(ctypes.c_uint),
+    ]
+    x11.XFetchName.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_char_p)]
+    x11.XFetchName.restype = ctypes.c_int
+    x11.XFree.argtypes = [ctypes.c_void_p]
+    x11.XSetClassHint.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(_XClassHint)]
+    x11.XFlush.argtypes = [ctypes.c_void_p]
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+
+    display = x11.XOpenDisplay(None)
+    if not display:
+        return
+    wanted = title.encode()
+    hint = _XClassHint(wanted, wanted)
+
+    def walk(win):
+        root_ret = ctypes.c_ulong()
+        parent = ctypes.c_ulong()
+        children = ctypes.POINTER(ctypes.c_ulong)()
+        count = ctypes.c_uint()
+        if x11.XQueryTree(display, win, ctypes.byref(root_ret), ctypes.byref(parent), ctypes.byref(children), ctypes.byref(count)) == 0:
+            return
+        try:
+            for index in range(count.value):
+                child = children[index]
+                name = ctypes.c_char_p()
+                if x11.XFetchName(display, child, ctypes.byref(name)):
+                    try:
+                        if name.value == wanted:
+                            x11.XSetClassHint(display, child, ctypes.byref(hint))
+                    finally:
+                        if name:
+                            x11.XFree(name)
+                walk(child)
+        finally:
+            if children:
+                x11.XFree(children)
+
+    try:
+        walk(x11.XDefaultRootWindow(display))
+        x11.XFlush(display)
+    finally:
+        x11.XCloseDisplay(display)
+
+
+class _XKeyReader(object):
+    """Read the typed character from X11.
+
+    OpenCV's Qt backend turns latin-1 keys such as § and ² into 0, because
+    QTest::keyToAscii has no entry for them. A second X client still receives
+    the real character.
+    """
+
+    def __init__(self):
+        self.display = None
+        self.x11 = None
+        self.window = None
+        self.title = None
+
+    def _open(self):
+        if self.display:
+            return True
+        try:
+            x11 = ctypes.CDLL("libX11.so.6")
+        except OSError:
+            return False
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XDefaultRootWindow.restype = ctypes.c_ulong
+        x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        x11.XQueryTree.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong,
+            ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong),
+            ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong)), ctypes.POINTER(ctypes.c_uint),
+        ]
+        x11.XFetchName.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_char_p)]
+        x11.XFetchName.restype = ctypes.c_int
+        x11.XFree.argtypes = [ctypes.c_void_p]
+        x11.XSelectInput.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_long]
+        x11.XFlush.argtypes = [ctypes.c_void_p]
+        x11.XPending.argtypes = [ctypes.c_void_p]
+        x11.XPending.restype = ctypes.c_int
+        x11.XNextEvent.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        x11.XLookupString.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int,
+            ctypes.POINTER(ctypes.c_ulong), ctypes.c_void_p,
+        ]
+        x11.XLookupString.restype = ctypes.c_int
+        display = x11.XOpenDisplay(None)
+        if not display:
+            return False
+        self.x11 = x11
+        self.display = display
+        return True
+
+    def _find(self, title):
+        if not self._open():
+            return 0
+        wanted = title.encode()
+        found = []
+
+        def walk(win):
+            root_ret = ctypes.c_ulong()
+            parent = ctypes.c_ulong()
+            children = ctypes.POINTER(ctypes.c_ulong)()
+            count = ctypes.c_uint()
+            if self.x11.XQueryTree(self.display, win, ctypes.byref(root_ret), ctypes.byref(parent), ctypes.byref(children), ctypes.byref(count)) == 0:
+                return
+            try:
+                for index in range(count.value):
+                    child = children[index]
+                    name = ctypes.c_char_p()
+                    if self.x11.XFetchName(self.display, child, ctypes.byref(name)):
+                        try:
+                            if name.value == wanted:
+                                found.append(child)
+                        finally:
+                            if name:
+                                self.x11.XFree(name)
+                    walk(child)
+            finally:
+                if children:
+                    self.x11.XFree(children)
+
+        walk(self.x11.XDefaultRootWindow(self.display))
+        return found[-1] if found else 0
+
+    def poll(self, title):
+        if not title:
+            return None
+        if self.window is None or self.title != title:
+            window = self._find(title)
+            if not window:
+                return None
+            # KeyPressMask. A second X client receives its own copy.
+            self.x11.XSelectInput(self.display, window, 1)
+            self.x11.XFlush(self.display)
+            self.window = window
+            self.title = title
+        if self.x11.XPending(self.display) <= 0:
+            return None
+        event = ctypes.create_string_buffer(256)
+        self.x11.XNextEvent(self.display, event)
+        if ctypes.c_int.from_buffer(event).value != 2:
+            return None
+        text = ctypes.create_string_buffer(8)
+        keysym = ctypes.c_ulong()
+        count = self.x11.XLookupString(event, text, 8, ctypes.byref(keysym), None)
+        if count > 0:
+            return text.raw[:count].decode("latin-1")
+        # §, ² and é have a latin-1 keysym but no XLookupString byte.
+        if 0x20 <= keysym.value <= 0xFF:
+            return chr(keysym.value)
+        return None
+
+
+_x11_keys = _XKeyReader()
+
+
 def _point_qt_at_system_fonts():
     # Qt prints QFontDatabase five times per window when QT_QPA_FONTDIR is
     # missing or has no font files. opencv-python sets it on import.
@@ -522,12 +746,15 @@ class InteractDesktop(InteractBase):
     def on_create_window (self, wnd_name):
         _point_qt_at_system_fonts()
         cv2.namedWindow(wnd_name)
+        cv2.setWindowTitle(wnd_name, wnd_name)
 
     def on_destroy_window (self, wnd_name):
         cv2.destroyWindow(wnd_name)
 
     def on_show_image (self, wnd_name, img):
         cv2.imshow (wnd_name, img)
+        cv2.setWindowTitle(wnd_name, wnd_name)
+        _set_x11_window_class(wnd_name)
 
     def on_capture_mouse (self, wnd_name):
         self.last_xy = (0,0)
@@ -566,12 +793,25 @@ class InteractDesktop(InteractBase):
         if has_windows or has_capture_keys:
             wait_key_time = max(1, int(sleep_time*1000) )
             ord_key = cv2.waitKeyEx(wait_key_time)
-            
-            shift_pressed = False
-            if ord_key != -1:
-                chr_key = chr(ord_key) if ord_key <= 255 else chr(0)
+            # 0 is not a typed character. Qt's ASCII table returns it for § and ².
+            if ord_key == 0:
+                ord_key = -1
+            typed = _x11_keys.poll(self.focus_wnd_name)
+            if typed:
+                ord_key = ord(typed[0])
 
-                if chr_key >= 'A' and chr_key <= 'Z':
+            shift_pressed = False
+            # Qt's waitKeyEx uses signed 32-bit codes. No key is -1, and some
+            # live codes arrive negative. chr() rejects anything outside Unicode.
+            if isinstance(ord_key, int) and 0 <= ord_key <= 0x10FFFF:
+                chr_key = chr(ord_key) if ord_key <= 255 else chr(0)
+                translated = None
+                if 0 < ord_key <= 255 and is_azerty() and self.focus_wnd_name in self.physical_key_windows:
+                    translated = translate_azerty(chr_key)
+                if translated is not None:
+                    chr_key, shift_pressed = translated
+                    ord_key = ord(chr_key)
+                elif chr_key >= 'A' and chr_key <= 'Z':
                     shift_pressed = True
                     ord_key += 32
                 elif chr_key == '?':
@@ -587,7 +827,7 @@ class InteractDesktop(InteractBase):
             if sleep_time != 0:
                 time.sleep(sleep_time)
 
-        if has_capture_keys and ord_key != -1:
+        if has_capture_keys and isinstance(ord_key, int) and ord_key >= 0:
             self.add_key_event ( self.focus_wnd_name, ord_key, False, False, shift_pressed)
 
     def on_wait_any_key(self):
