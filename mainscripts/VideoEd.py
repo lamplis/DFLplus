@@ -34,12 +34,17 @@ def extract_video(input_file, output_dir, output_ext=None, fps=None):
 
     job = ffmpeg.input(str(input_file_path))
 
-    kwargs = {'pix_fmt': 'rgb24'}
+    kwargs = {}
     if fps != 0:
         kwargs.update ({'r':str(fps)})
 
     if output_ext == 'jpg':
+        # Keep the decoder's 4:2:0 planes. Forcing rgb24 here only adds a
+        # slow software colorspace conversion before JPEG encodes back to YUV.
         kwargs.update ({'q:v':'2'}) #highest quality for jpg
+    elif output_ext == 'png':
+        # Lossless. zlib's default level is most of the extract time.
+        kwargs.update ({'pix_fmt': 'rgb24', 'compression_level': 1})
 
     job = job.output( str (output_path / ('%5d.'+output_ext)), **kwargs )
 

@@ -12,9 +12,9 @@ from types import SimpleNamespace as sn
 import cv2
 import numpy as np
 import numpy.linalg as npla
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
+from PyQt6.QtWidgets import *
 
 from core import imagelib, pathex
 from core.cv2ex import *
@@ -63,7 +63,7 @@ class ImagePreviewSequenceBar(QFrame):
 
         self.icon_size = icon_size
 
-        black_q_img = QImage(np.zeros( (icon_size,icon_size,3) ).data, icon_size, icon_size, 3*icon_size, QImage.Format_RGB888)
+        black_q_img = QImage_from_np(np.zeros((icon_size, icon_size, 3), dtype=np.uint8))
         self.black_q_pixmap = QPixmap.fromImage(black_q_img)
 
         self.image_containers = [ QLabel() for i in range(preview_images_count)]
@@ -87,7 +87,7 @@ class ImagePreviewSequenceBar(QFrame):
                 opacity_effect.setOpacity(0.5)
                 q_label.setGraphicsEffect(opacity_effect)
 
-            q_label.setSizePolicy (QSizePolicy.Fixed, QSizePolicy.Fixed)
+            q_label.setSizePolicy (QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
             main_frame_l_cont_hl.addWidget (q_label, 0, i)
 
@@ -134,8 +134,8 @@ class ColorScheme():
         self.poly_unselected_brush = QBrush(unselected_color)
         self.poly_selected_brush = QBrush(selected_color)
 
-        self.poly_outline_solid_pen = QPen(outline_color, outline_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
-        self.poly_outline_dot_pen = QPen(outline_color, outline_width, Qt.DotLine, Qt.RoundCap, Qt.RoundJoin)
+        self.poly_outline_solid_pen = QPen(outline_color, outline_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        self.poly_outline_dot_pen = QPen(outline_color, outline_width, Qt.PenStyle.DotLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
 
         self.pt_outline_pen = QPen(pt_outline_color)
         self.cross_cursor = cross_cursor
@@ -203,8 +203,8 @@ class QCanvasControlsLeftBar(QFrame):
         controls_bar_frame2_l.addWidget ( btn_poly_type_include )
         controls_bar_frame2_l.addWidget ( btn_poly_type_exclude )
         controls_bar_frame2 = QFrame()
-        controls_bar_frame2.setFrameShape(QFrame.StyledPanel)
-        controls_bar_frame2.setSizePolicy (QSizePolicy.Fixed, QSizePolicy.Fixed)
+        controls_bar_frame2.setFrameShape(QFrame.Shape.StyledPanel)
+        controls_bar_frame2.setSizePolicy (QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         controls_bar_frame2.setLayout(controls_bar_frame2_l)
 
         controls_bar_frame3_l = QVBoxLayout()
@@ -212,15 +212,15 @@ class QCanvasControlsLeftBar(QFrame):
         controls_bar_frame3_l.addWidget ( btn_redo_pt )
         controls_bar_frame3_l.addWidget ( btn_delete_poly )
         controls_bar_frame3 = QFrame()
-        controls_bar_frame3.setFrameShape(QFrame.StyledPanel)
-        controls_bar_frame3.setSizePolicy (QSizePolicy.Fixed, QSizePolicy.Fixed)
+        controls_bar_frame3.setFrameShape(QFrame.Shape.StyledPanel)
+        controls_bar_frame3.setSizePolicy (QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         controls_bar_frame3.setLayout(controls_bar_frame3_l)
 
         controls_bar_frame4_l = QVBoxLayout()
         controls_bar_frame4_l.addWidget ( btn_pt_edit_mode )
         controls_bar_frame4 = QFrame()
-        controls_bar_frame4.setFrameShape(QFrame.StyledPanel)
-        controls_bar_frame4.setSizePolicy (QSizePolicy.Fixed, QSizePolicy.Fixed)
+        controls_bar_frame4.setFrameShape(QFrame.Shape.StyledPanel)
+        controls_bar_frame4.setSizePolicy (QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         controls_bar_frame4.setLayout(controls_bar_frame4_l)
 
         controls_bar_l = QVBoxLayout()
@@ -229,7 +229,7 @@ class QCanvasControlsLeftBar(QFrame):
         controls_bar_l.addWidget(controls_bar_frame3)
         controls_bar_l.addWidget(controls_bar_frame4)
 
-        self.setSizePolicy ( QSizePolicy.Fixed, QSizePolicy.Expanding )
+        self.setSizePolicy ( QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding )
         self.setLayout(controls_bar_l)
 
 class QCanvasControlsRightBar(QFrame):
@@ -283,8 +283,8 @@ class QCanvasControlsRightBar(QFrame):
         controls_bar_frame2_l = QVBoxLayout()
         controls_bar_frame2_l.addWidget ( btn_view_xseg_overlay_mask )
         controls_bar_frame2 = QFrame()
-        controls_bar_frame2.setFrameShape(QFrame.StyledPanel)
-        controls_bar_frame2.setSizePolicy (QSizePolicy.Fixed, QSizePolicy.Fixed)
+        controls_bar_frame2.setFrameShape(QFrame.Shape.StyledPanel)
+        controls_bar_frame2.setSizePolicy (QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         controls_bar_frame2.setLayout(controls_bar_frame2_l)
         
         controls_bar_frame1_l = QVBoxLayout()
@@ -294,15 +294,15 @@ class QCanvasControlsRightBar(QFrame):
         controls_bar_frame1_l.addWidget ( btn_view_baked_mask )
         controls_bar_frame1_l.addWidget ( btn_view_xseg_mask )
         controls_bar_frame1 = QFrame()
-        controls_bar_frame1.setFrameShape(QFrame.StyledPanel)
-        controls_bar_frame1.setSizePolicy (QSizePolicy.Fixed, QSizePolicy.Fixed)
+        controls_bar_frame1.setFrameShape(QFrame.Shape.StyledPanel)
+        controls_bar_frame1.setSizePolicy (QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         controls_bar_frame1.setLayout(controls_bar_frame1_l)
         
         controls_bar_frame3_l = QVBoxLayout()
         controls_bar_frame3_l.addWidget ( btn_view_lock_center )
         controls_bar_frame3 = QFrame()
-        controls_bar_frame3.setFrameShape(QFrame.StyledPanel)
-        controls_bar_frame3.setSizePolicy (QSizePolicy.Fixed, QSizePolicy.Fixed)
+        controls_bar_frame3.setFrameShape(QFrame.Shape.StyledPanel)
+        controls_bar_frame3.setSizePolicy (QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         controls_bar_frame3.setLayout(controls_bar_frame3_l)
 
         controls_bar_l = QVBoxLayout()
@@ -311,7 +311,7 @@ class QCanvasControlsRightBar(QFrame):
         controls_bar_l.addWidget(controls_bar_frame1)
         controls_bar_l.addWidget(controls_bar_frame3)
         
-        self.setSizePolicy ( QSizePolicy.Fixed, QSizePolicy.Expanding )
+        self.setSizePolicy ( QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding )
         self.setLayout(controls_bar_l)
 
 class QCanvasOperator(QWidget):
@@ -423,7 +423,7 @@ class QCanvasOperator(QWidget):
             self.img_pixmap = None
             self.update_cursor(is_finalize=True)
             self.setMouseTracking(False)
-            self.setFocusPolicy(Qt.NoFocus)
+            self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.set_cbar_disabled()
             self.initialized = False
             self.update()
@@ -512,7 +512,7 @@ class QCanvasOperator(QWidget):
         tl = QPoint_to_np(rect.topLeft())
         xy = self.img_to_cli_pt(tl)
         xy2 = self.img_to_cli_pt(tl + QSize_to_np(rect.size()) ) - xy
-        return QRect ( *xy.astype(np.int), *xy2.astype(np.int) )
+        return QRect ( *xy.astype(np.int32), *xy2.astype(np.int32) )
 
     # ====================================================================================
     # ====================================================================================
@@ -653,24 +653,24 @@ class QCanvasOperator(QWidget):
                 self.current_cursor = None
         else:
             color_cc = self.get_current_color_scheme().cross_cursor
-            nc = Qt.ArrowCursor
+            nc = Qt.CursorShape.ArrowCursor
 
             if self.drag_type == DragType.IMAGE_LOOK:
-                nc = Qt.ClosedHandCursor
+                nc = Qt.CursorShape.ClosedHandCursor
             else:
 
                 if self.op_mode == OpMode.NONE:
                     nc = color_cc
                     if self.mouse_wire_poly is not None:
-                        nc = Qt.PointingHandCursor
+                        nc = Qt.CursorShape.PointingHandCursor
 
                 elif self.op_mode == OpMode.DRAW_PTS:
                     nc = color_cc
                 elif self.op_mode == OpMode.EDIT_PTS:
-                    nc = Qt.ArrowCursor
+                    nc = Qt.CursorShape.ArrowCursor
 
                     if self.mouse_op_poly_pt_id is not None:
-                        nc = Qt.PointingHandCursor
+                        nc = Qt.CursorShape.PointingHandCursor
 
                     if self.pt_edit_mode == PTEditMode.ADD_DEL:
 
@@ -763,9 +763,9 @@ class QCanvasOperator(QWidget):
         key = ev.key()
         key_mods = int(ev.modifiers())
         if self.op_mode == OpMode.DRAW_PTS:
-            self.set_view_lock(ViewLock.CENTER if key_mods == Qt.ShiftModifier else ViewLock.NONE )
+            self.set_view_lock(ViewLock.CENTER if key_mods == Qt.KeyboardModifier.ShiftModifier else ViewLock.NONE )
         elif self.op_mode == OpMode.EDIT_PTS:
-            self.set_pt_edit_mode(PTEditMode.ADD_DEL if key_mods == Qt.ControlModifier else PTEditMode.MOVE )
+            self.set_pt_edit_mode(PTEditMode.ADD_DEL if key_mods == Qt.KeyboardModifier.ControlModifier else PTEditMode.MOVE )
 
     def on_keyReleaseEvent(self, ev):
         if not self.initialized:
@@ -773,9 +773,9 @@ class QCanvasOperator(QWidget):
         key = ev.key()
         key_mods = int(ev.modifiers())
         if self.op_mode == OpMode.DRAW_PTS:
-            self.set_view_lock(ViewLock.CENTER if key_mods == Qt.ShiftModifier else ViewLock.NONE )
+            self.set_view_lock(ViewLock.CENTER if key_mods == Qt.KeyboardModifier.ShiftModifier else ViewLock.NONE )
         elif self.op_mode == OpMode.EDIT_PTS:
-            self.set_pt_edit_mode(PTEditMode.ADD_DEL if key_mods == Qt.ControlModifier else PTEditMode.MOVE )
+            self.set_pt_edit_mode(PTEditMode.ADD_DEL if key_mods == Qt.KeyboardModifier.ControlModifier else PTEditMode.MOVE )
 
     def enterEvent(self, ev):
         super().enterEvent(ev)
@@ -796,7 +796,7 @@ class QCanvasOperator(QWidget):
 
         btn = ev.button()
 
-        if btn == Qt.LeftButton:
+        if btn == Qt.MouseButton.LeftButton:
             if self.op_mode == OpMode.NONE:
                 # Clicking in NO OPERATION mode
                 if self.mouse_wire_poly is not None:
@@ -853,7 +853,7 @@ class QCanvasOperator(QWidget):
                     # other cases -> unselect poly
                     self.set_op_mode(OpMode.NONE)
 
-        elif btn == Qt.MiddleButton:
+        elif btn == Qt.MouseButton.MiddleButton:
             if self.drag_type == DragType.NONE:
                 # Start image drag
                 self.drag_type = DragType.IMAGE_LOOK
@@ -871,13 +871,13 @@ class QCanvasOperator(QWidget):
 
         btn = ev.button()
 
-        if btn == Qt.LeftButton:
+        if btn == Qt.MouseButton.LeftButton:
             if self.op_mode == OpMode.EDIT_PTS:
                 if self.drag_type == DragType.POLY_PT:
                     self.drag_type = DragType.NONE
                     self.update()
 
-        elif btn == Qt.MiddleButton:
+        elif btn == Qt.MouseButton.MiddleButton:
             if self.drag_type == DragType.IMAGE_LOOK:
                 self.drag_type = DragType.NONE
                 self.update_cursor()
@@ -940,9 +940,8 @@ class QCanvasOperator(QWidget):
 
         qp = self.qp
         qp.begin(self)
-        qp.setRenderHint(QPainter.Antialiasing)
-        qp.setRenderHint(QPainter.HighQualityAntialiasing)
-        qp.setRenderHint(QPainter.SmoothPixmapTransform)
+        qp.setRenderHint(QPainter.RenderHint.Antialiasing)
+        qp.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
         src_rect = QRect(0, 0, *self.img_size)
         dst_rect = self.img_to_cli_rect( src_rect )
@@ -982,7 +981,7 @@ class QCanvasOperator(QWidget):
                 poly_pts = poly.get_pts()
                 for pt_id, img_pt in enumerate(poly_pts):
                     cli_pt = self.img_to_cli_pt(img_pt)
-                    q_cli_pt = QPoint_from_np(cli_pt)
+                    q_cli_pt = QPointF_from_np(cli_pt)
 
                     if pt_id == 0:
                         poly_line_path.moveTo(q_cli_pt)
@@ -996,10 +995,10 @@ class QCanvasOperator(QWidget):
                             (self.pt_edit_mode == PTEditMode.MOVE) or \
                             (self.pt_edit_mode == PTEditMode.ADD_DEL and self.mouse_op_poly_pt_id == pt_id) \
                             ):
-                            pts_line_path.moveTo( QPoint_from_np(cli_pt + np.float32([0,-pt_rad])) )
-                            pts_line_path.lineTo( QPoint_from_np(cli_pt + np.float32([0,pt_rad])) )
-                            pts_line_path.moveTo( QPoint_from_np(cli_pt + np.float32([-pt_rad,0])) )
-                            pts_line_path.lineTo( QPoint_from_np(cli_pt + np.float32([pt_rad,0])) )
+                            pts_line_path.moveTo( QPointF_from_np(cli_pt + np.float32([0,-pt_rad])) )
+                            pts_line_path.lineTo( QPointF_from_np(cli_pt + np.float32([0,pt_rad])) )
+                            pts_line_path.moveTo( QPointF_from_np(cli_pt + np.float32([-pt_rad,0])) )
+                            pts_line_path.lineTo( QPointF_from_np(cli_pt + np.float32([pt_rad,0])) )
 
                         if (self.op_mode == OpMode.EDIT_PTS and \
                             self.pt_edit_mode == PTEditMode.ADD_DEL and \
@@ -1015,7 +1014,7 @@ class QCanvasOperator(QWidget):
                 if poly == op_poly:
                     if op_mode == OpMode.DRAW_PTS:
                         # Line from last point to mouse
-                        poly_line_path.lineTo( QPoint_from_np(self.mouse_cli_pt) )
+                        poly_line_path.lineTo( QPointF_from_np(self.mouse_cli_pt) )
 
                     if self.mouse_op_poly_pt_id is not None:
                         pass
@@ -1024,14 +1023,14 @@ class QCanvasOperator(QWidget):
                         if self.pt_edit_mode == PTEditMode.ADD_DEL and self.mouse_op_poly_pt_id is None:
                             # Ready to insert point on edge
                             m_cli_pt = self.mouse_op_poly_edge_id_pt
-                            pts_line_path.moveTo( QPoint_from_np(m_cli_pt + np.float32([0,-pt_rad])) )
-                            pts_line_path.lineTo( QPoint_from_np(m_cli_pt + np.float32([0,pt_rad])) )
-                            pts_line_path.moveTo( QPoint_from_np(m_cli_pt + np.float32([-pt_rad,0])) )
-                            pts_line_path.lineTo( QPoint_from_np(m_cli_pt + np.float32([pt_rad,0])) )
+                            pts_line_path.moveTo( QPointF_from_np(m_cli_pt + np.float32([0,-pt_rad])) )
+                            pts_line_path.lineTo( QPointF_from_np(m_cli_pt + np.float32([0,pt_rad])) )
+                            pts_line_path.moveTo( QPointF_from_np(m_cli_pt + np.float32([-pt_rad,0])) )
+                            pts_line_path.lineTo( QPointF_from_np(m_cli_pt + np.float32([pt_rad,0])) )
 
                 if len(poly_pts) >= 2:
                     # Closing poly line
-                    poly_line_path.lineTo( QPoint_from_np(self.img_to_cli_pt(poly_pts[0])) )
+                    poly_line_path.lineTo( QPointF_from_np(self.img_to_cli_pt(poly_pts[0])) )
 
                 # Draw calls
                 qp.setPen(color_scheme.pt_outline_pen)
@@ -1061,8 +1060,10 @@ class QCanvasOperator(QWidget):
                     qp.setPen(color_scheme.poly_outline_solid_pen)
                     qp.setBrush(QBrush())
 
-                    qp.drawLine( *(pt_remove_cli_pt + np.float32([-pt_rad_x2,-pt_rad_x2])), *(pt_remove_cli_pt + np.float32([pt_rad_x2,pt_rad_x2])) )
-                    qp.drawLine( *(pt_remove_cli_pt + np.float32([-pt_rad_x2,pt_rad_x2])), *(pt_remove_cli_pt + np.float32([pt_rad_x2,-pt_rad_x2])) )
+                    qp.drawLine(QPointF_from_np(pt_remove_cli_pt + np.float32([-pt_rad_x2,-pt_rad_x2])),
+                                QPointF_from_np(pt_remove_cli_pt + np.float32([pt_rad_x2,pt_rad_x2])))
+                    qp.drawLine(QPointF_from_np(pt_remove_cli_pt + np.float32([-pt_rad_x2,pt_rad_x2])),
+                                QPointF_from_np(pt_remove_cli_pt + np.float32([pt_rad_x2,-pt_rad_x2])))
 
         qp.end()
 
@@ -1178,7 +1179,7 @@ class MainWindow(QXMainWindow):
         # Loader
         self.loading_frame = QFrame(self.main_canvas_frame)
         self.loading_frame.setAutoFillBackground(True)
-        self.loading_frame.setFrameShape(QFrame.StyledPanel)
+        self.loading_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.loader_label = QLabel()
         self.loader_progress_bar = QProgressBar()
 
@@ -1186,9 +1187,9 @@ class MainWindow(QXMainWindow):
         intro_image.setPixmap( QPixmap.fromImage(QImageDB.intro) )
 
         intro_image_frame_l = QVBoxLayout()
-        intro_image_frame_l.addWidget(intro_image, alignment=Qt.AlignCenter)
+        intro_image_frame_l.addWidget(intro_image, alignment=Qt.AlignmentFlag.AlignCenter)
         intro_image_frame = QFrame()
-        intro_image_frame.setSizePolicy (QSizePolicy.Expanding, QSizePolicy.Expanding)
+        intro_image_frame.setSizePolicy (QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         intro_image_frame.setLayout(intro_image_frame_l)
 
         loading_frame_l = QVBoxLayout()
@@ -1297,8 +1298,8 @@ class MainWindow(QXMainWindow):
 
     def process_prev_image(self):
         key_mods = QApplication.keyboardModifiers()
-        step = 5 if key_mods == Qt.ShiftModifier else 1
-        only_has_polys = key_mods == Qt.ControlModifier
+        step = 5 if key_mods == Qt.KeyboardModifier.ShiftModifier else 1
+        only_has_polys = key_mods == Qt.KeyboardModifier.ControlModifier
 
         if self.canvas.op.is_initialized():
             self.canvas_finalize(self.image_paths[0])
@@ -1323,8 +1324,8 @@ class MainWindow(QXMainWindow):
     def process_next_image(self, first_initialization=False):
         key_mods = QApplication.keyboardModifiers()
 
-        step = 0 if first_initialization else 5 if key_mods == Qt.ShiftModifier else 1
-        only_has_polys = False if first_initialization else key_mods == Qt.ControlModifier
+        step = 0 if first_initialization else 5 if key_mods == Qt.KeyboardModifier.ShiftModifier else 1
+        only_has_polys = False if first_initialization else key_mods == Qt.KeyboardModifier.ControlModifier
 
         if self.canvas.op.is_initialized():
             self.canvas_finalize(self.image_paths[0])
@@ -1359,7 +1360,7 @@ class MainWindow(QXMainWindow):
         self.canvas = QCanvas()
 
         image_bar = self.image_bar = ImagePreviewSequenceBar(preview_images_count=9, icon_size=QUIConfig.preview_bar_icon_q_size.width())
-        image_bar.setSizePolicy ( QSizePolicy.Fixed, QSizePolicy.Fixed )
+        image_bar.setSizePolicy ( QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed )
 
 
         btn_prev_image = QXIconButton(QIconDB.left, QStringDB.btn_prev_image_tip, shortcut='A', click_func=self.process_prev_image)
@@ -1376,31 +1377,31 @@ class MainWindow(QXMainWindow):
         
         preview_image_bar_frame_l = QHBoxLayout()
         preview_image_bar_frame_l.setContentsMargins(0,0,0,0)
-        preview_image_bar_frame_l.addWidget ( pad_image, alignment=Qt.AlignCenter)
-        preview_image_bar_frame_l.addWidget ( btn_prev_image, alignment=Qt.AlignCenter)
+        preview_image_bar_frame_l.addWidget ( pad_image, alignment=Qt.AlignmentFlag.AlignCenter)
+        preview_image_bar_frame_l.addWidget ( btn_prev_image, alignment=Qt.AlignmentFlag.AlignCenter)
         preview_image_bar_frame_l.addWidget ( image_bar)
-        preview_image_bar_frame_l.addWidget ( btn_next_image, alignment=Qt.AlignCenter)
-        #preview_image_bar_frame_l.addWidget ( btn_delete_image, alignment=Qt.AlignCenter)
+        preview_image_bar_frame_l.addWidget ( btn_next_image, alignment=Qt.AlignmentFlag.AlignCenter)
+        #preview_image_bar_frame_l.addWidget ( btn_delete_image, alignment=Qt.AlignmentFlag.AlignCenter)
 
         preview_image_bar_frame = QFrame()
-        preview_image_bar_frame.setSizePolicy ( QSizePolicy.Fixed, QSizePolicy.Fixed )
+        preview_image_bar_frame.setSizePolicy ( QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed )
         preview_image_bar_frame.setLayout(preview_image_bar_frame_l)
 
         preview_image_bar_frame2_l = QHBoxLayout()
         preview_image_bar_frame2_l.setContentsMargins(0,0,0,0)
-        preview_image_bar_frame2_l.addWidget ( btn_delete_image, alignment=Qt.AlignCenter)
+        preview_image_bar_frame2_l.addWidget ( btn_delete_image, alignment=Qt.AlignmentFlag.AlignCenter)
 
         preview_image_bar_frame2 = QFrame()
-        preview_image_bar_frame2.setSizePolicy ( QSizePolicy.Fixed, QSizePolicy.Fixed )
+        preview_image_bar_frame2.setSizePolicy ( QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed )
         preview_image_bar_frame2.setLayout(preview_image_bar_frame2_l)
         
         preview_image_bar_l = QHBoxLayout()
-        preview_image_bar_l.addWidget (preview_image_bar_frame, alignment=Qt.AlignCenter)
+        preview_image_bar_l.addWidget (preview_image_bar_frame, alignment=Qt.AlignmentFlag.AlignCenter)
         preview_image_bar_l.addWidget (preview_image_bar_frame2)
         
         preview_image_bar = QFrame()
-        preview_image_bar.setFrameShape(QFrame.StyledPanel)
-        preview_image_bar.setSizePolicy ( QSizePolicy.Expanding, QSizePolicy.Fixed )
+        preview_image_bar.setFrameShape(QFrame.Shape.StyledPanel)
+        preview_image_bar.setSizePolicy ( QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed )
         preview_image_bar.setLayout(preview_image_bar_l)
 
         label_font = QFont('Courier New')
@@ -1411,9 +1412,9 @@ class MainWindow(QXMainWindow):
 
         status_frame_l = QHBoxLayout()
         status_frame_l.setContentsMargins(0,0,0,0)
-        status_frame_l.addWidget ( QLabel(), alignment=Qt.AlignCenter)
-        status_frame_l.addWidget (self.filename_label, alignment=Qt.AlignCenter)
-        status_frame_l.addWidget (self.has_ie_polys_count_label, alignment=Qt.AlignCenter)
+        status_frame_l.addWidget ( QLabel(), alignment=Qt.AlignmentFlag.AlignCenter)
+        status_frame_l.addWidget (self.filename_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        status_frame_l.addWidget (self.has_ie_polys_count_label, alignment=Qt.AlignmentFlag.AlignCenter)
         status_frame = QFrame()
         status_frame.setLayout(status_frame_l)
 
@@ -1464,10 +1465,17 @@ def start(input_dirpath):
     root_path = Path(__file__).parent
     cfg_root_path = Path(tempfile.gettempdir())
 
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    # cv2's import points Qt at its Qt 5 plugins. The application is Qt 6.
+    import PyQt6
+    pyqt_plugins = Path(PyQt6.__file__).resolve().parent / "Qt6" / "plugins"
+    os.environ["QT_PLUGIN_PATH"] = str(pyqt_plugins)
+    os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(pyqt_plugins / "platforms")
+    if "site-packages/cv2" in os.environ.get("QT_QPA_FONTDIR", ""):
+        del os.environ["QT_QPA_FONTDIR"]
 
-    app = QApplication([])
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
     app.setApplicationName("XSegEditor")
     app.setStyle('Fusion')
 
@@ -1490,5 +1498,5 @@ def start(input_dirpath):
     win.show()
     win.raise_()
 
-    app.exec_()
+    app.exec()
     return 0

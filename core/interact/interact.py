@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -441,6 +442,68 @@ class InteractBase(object):
         sys.stdin = os.fdopen( sys.stdin.fileno() )
 
 
+_FONT_FILE_SUFFIXES = (".ttf", ".otf", ".ttc")
+_system_font_dir_cache = None
+
+
+def _has_font_files(path):
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return False
+    return any(name.lower().endswith(_FONT_FILE_SUFFIXES) for name in names)
+
+
+def _system_font_dir():
+    # opencv-python points Qt at cv2/qt/fonts and does not ship that directory.
+    # Ask fontconfig where this machine keeps real font files, then fall back
+    # to the usual Linux locations. DejaVu is preferred because it is small.
+    global _system_font_dir_cache
+    if _system_font_dir_cache is not None:
+        return _system_font_dir_cache
+
+    preferred = (
+        "/usr/share/fonts/truetype/dejavu",
+        "/usr/share/fonts/truetype/liberation",
+        "/usr/share/fonts/TTF",
+        "/usr/share/fonts/truetype",
+        "/usr/share/fonts",
+    )
+    for candidate in preferred:
+        if _has_font_files(candidate):
+            _system_font_dir_cache = candidate
+            return candidate
+
+    counts = {}
+    try:
+        listed = subprocess.check_output(
+            ["fc-list", "-f", "%{file}\n"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        listed = ""
+    for line in listed.splitlines():
+        font_path = line.strip()
+        if font_path.lower().endswith(_FONT_FILE_SUFFIXES):
+            directory = os.path.dirname(font_path)
+            counts[directory] = counts.get(directory, 0) + 1
+    _system_font_dir_cache = max(counts, key=counts.get) if counts else ""
+    return _system_font_dir_cache
+
+
+def _point_qt_at_system_fonts():
+    # Qt prints QFontDatabase five times per window when QT_QPA_FONTDIR is
+    # missing or has no font files. opencv-python sets it on import.
+    fontdir = os.environ.get("QT_QPA_FONTDIR", "")
+    if _has_font_files(fontdir):
+        return
+    system = _system_font_dir()
+    if system:
+        os.environ["QT_QPA_FONTDIR"] = system
+
+
 class InteractDesktop(InteractBase):
     def __init__(self):
         colorama.init()
@@ -457,6 +520,7 @@ class InteractDesktop(InteractBase):
         cv2.destroyAllWindows()
 
     def on_create_window (self, wnd_name):
+        _point_qt_at_system_fonts()
         cv2.namedWindow(wnd_name)
 
     def on_destroy_window (self, wnd_name):

@@ -212,6 +212,19 @@ def trainerThread (s2c, c2s, e,
 
 
 
+def _watch_stdin_for_enter(s2c):
+    # The trainer tells the user to press Enter. That key is also checked on
+    # the preview window, but OpenCV's Qt window does not receive it here.
+    # A blank line from the terminal is the stop signal the message describes.
+    try:
+        while True:
+            line = sys.stdin.readline()
+            if line == '' or line in ('\n', '\r\n', '\r'):
+                s2c.put( {'op': 'close'} )
+                return
+    except Exception:
+        return
+
 def main(**kwargs):
     io.log_info ("Running trainer.\r\n")
 
@@ -225,6 +238,8 @@ def main(**kwargs):
     thread.start()
 
     e.wait() #Wait for inital load to occur.
+
+    threading.Thread(target=_watch_stdin_for_enter, args=(s2c,), daemon=True).start()
 
     if no_preview:
         while True:
@@ -326,7 +341,8 @@ def main(**kwargs):
             key_events = io.get_key_events(wnd_name)
             key, chr_key, ctrl_pressed, alt_pressed, shift_pressed = key_events[-1] if len(key_events) > 0 else (0,0,False,False,False)
 
-            if key == ord('\n') or key == ord('\r'):
+            # Qt reports Return/Enter as key codes, not as newline characters.
+            if key in (ord('\n'), ord('\r'), 13, 10, 16777220, 16777221):
                 s2c.put ( {'op': 'close'} )
             elif key == ord('s'):
                 s2c.put ( {'op': 'save'} )

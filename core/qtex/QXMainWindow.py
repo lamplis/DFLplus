@@ -1,6 +1,6 @@
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
+from PyQt6.QtWidgets import *
 
 class QXMainWindow(QWidget):
     """
@@ -15,7 +15,7 @@ class QXMainWindow(QWidget):
         
         self.keyPressEvent_listeners = []
         self.keyReleaseEvent_listeners = []
-        self.setFocusPolicy(Qt.WheelFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.WheelFocus)
         
     def add_keyPressEvent_listener(self, func):
         self.keyPressEvent_listeners.append (func)
