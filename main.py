@@ -318,7 +318,7 @@ if __name__ == "__main__":
     p.add_argument('--model-dir', required=True, action=fixPathAction, dest="model_dir")
     p.set_defaults (func=process_xsegapply)
 
-    p = xseg_parser.add_parser( "parse", help="Apply a face-parsing ONNX model as an XSeg mask.")
+    p = xseg_parser.add_parser( "parse", help="Replace XSeg polygons using a face-parsing ONNX model.")
 
     def process_xsegparse(arguments):
         osex.set_process_lowest_prio()
@@ -328,6 +328,15 @@ if __name__ == "__main__":
     p.add_argument('--model-file', required=True, action=fixPathAction, dest="model_file")
     p.add_argument('--inner-mouth', default='include', choices=['include', 'exclude'], dest="inner_mouth")
     p.set_defaults (func=process_xsegparse)
+
+    p = xseg_parser.add_parser( "polys_to_mask", help="Bake XSeg polygons into applied masks.")
+
+    def process_xseg_polys_to_mask(arguments):
+        osex.set_process_lowest_prio()
+        from mainscripts import XSegUtil
+        XSegUtil.polys_to_xseg_mask (Path(arguments.input_dir))
+    p.add_argument('--input-dir', required=True, action=fixPathAction, dest="input_dir")
+    p.set_defaults (func=process_xseg_polys_to_mask)
 
 
     p = xseg_parser.add_parser( "remove", help="Remove applied XSeg masks from the extracted faces.")

@@ -101,6 +101,9 @@ def apply_xseg(input_path, model_path):
         dflimg.save()
 
 
+FACE_PARSER_POLY_STEP_PX = 2.0
+
+
 def apply_face_parser(input_path, model_file, inner_mouth):
     if not input_path.exists():
         raise ValueError(f'{input_path} not found. Please ensure it exists.')
@@ -108,10 +111,11 @@ def apply_face_parser(input_path, model_file, inner_mouth):
     if not model_file.exists():
         raise ValueError(f'{model_file} not found. Please ensure it exists.')
 
+    from core.imagelib import SegIEPolys
     from facelib.FaceParser import FaceParser
     parser = FaceParser(model_file)
 
-    io.log_info(f'Applying face parser to {input_path.name}/ folder.')
+    io.log_info(f'Applying face parser polygons to {input_path.name}/ folder.')
     images_paths = pathex.get_image_paths(input_path, return_Path_class=True)
 
     for filepath in io.progress_bar_generator(images_paths, "Processing"):
@@ -126,6 +130,38 @@ def apply_face_parser(input_path, model_file, inner_mouth):
             continue
 
         mask = parser.predict(img, inner_mouth=inner_mouth)
+        landmarks = dflimg.get_dict().get('landmarks')
+        ie_polys = SegIEPolys.mask_to_ie_polys(mask, step_px=FACE_PARSER_POLY_STEP_PX, landmarks=landmarks)
+        dflimg.set_seg_ie_polys(ie_polys)
+        dflimg.save()
+
+
+def polys_to_xseg_mask(input_path):
+    if not input_path.exists():
+        raise ValueError(f'{input_path} not found. Please ensure it exists.')
+
+    io.log_info(f'Baking polygons to XSeg masks in {input_path.name}/ folder.')
+    images_paths = pathex.get_image_paths(input_path, return_Path_class=True)
+
+    for filepath in io.progress_bar_generator(images_paths, "Processing"):
+        dflimg = DFLIMG.load(filepath)
+        if dflimg is None or not dflimg.has_data():
+            io.log_info(f'{filepath} is not a DFLIMG')
+            continue
+
+        ie_polys = dflimg.get_seg_ie_polys()
+        if ie_polys.get_pts_count() == 0:
+            io.log_info(f'{filepath} has no polygons')
+            continue
+
+        img = cv2_imread(filepath)
+        if img is None:
+            io.log_info(f'{filepath} is not an image')
+            continue
+
+        height, width = img.shape[:2]
+        mask = np.zeros((height, width, 1), np.float32)
+        ie_polys.overlay_mask(mask)
         dflimg.set_xseg_mask(mask)
         dflimg.save()
 

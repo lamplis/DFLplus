@@ -83,7 +83,17 @@ class QStringDB():
         QStringDB.btn_poly_to_mask_tip = {  'en' : 'Rewrite XSeg mask from polygons',
                                             'ru' : 'Перезаписать маску XSeg из полигонов',
                                             'zh' : '用选区重写XSeg遮罩',
-                                         }[lang]    
+                                         }[lang]
+
+        QStringDB.menu_add_pt = {   'en' : 'Add a point here',
+                                    'ru' : 'Добавить точку здесь',
+                                    'zh' : '在此处添加点',
+                                }[lang]
+
+        QStringDB.menu_delete_pt = { 'en' : 'Delete point',
+                                     'ru' : 'Удалить точку',
+                                     'zh' : '删除点',
+                                   }[lang]    
                                            
         QStringDB.btn_view_lock_center_tip = { 'en' : 'Lock cursor at the center ( HOLD SHIFT )',
                                                'ru' : 'Заблокировать курсор в центре ( удерживайте SHIFT )',

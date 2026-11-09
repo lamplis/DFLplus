@@ -158,7 +158,23 @@ class SegIEPolys():
         return cv2.pointPolygonTest(hull, centroid, False) >= 0
 
     @staticmethod
-    def mask_to_ie_polys(mask, min_area_ratio=0.002, epsilon_ratio=0.0015, landmarks=None):
+    def _resample_closed(contour, step_px):
+        points = np.asarray(contour, np.float32).reshape(-1, 2)
+        if len(points) == 0:
+            return points
+        step = float(step_px)
+        if step <= 0:
+            return points
+        kept = [points[0]]
+        last = points[0]
+        for point in points[1:]:
+            if float(np.linalg.norm(point - last)) >= step:
+                kept.append(point)
+                last = point
+        return np.stack(kept, axis=0)
+
+    @staticmethod
+    def mask_to_ie_polys(mask, min_area_ratio=0.002, epsilon_ratio=0.0015, landmarks=None, step_px=None):
         ie_polys = SegIEPolys()
         mask = np.asarray(mask)
         if mask.ndim == 3:
@@ -187,20 +203,42 @@ class SegIEPolys():
         for index, contour in enumerate(contours):
             if abs(cv2.contourArea(contour)) < min_area:
                 continue
-            epsilon = float(epsilon_ratio) * cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, epsilon, True)
-            if len(approx) < 3:
-                continue
             parent = int(hierarchy[index][3])
             if parent >= 0 and mouth_landmarks is not None and SegIEPolys._hole_is_mouth(contour, mouth_landmarks):
                 continue
+            if step_px is None:
+                epsilon = float(epsilon_ratio) * cv2.arcLength(contour, True)
+                points = cv2.approxPolyDP(contour, epsilon, True)[:, 0, :]
+            else:
+                points = SegIEPolys._resample_closed(contour, step_px)
+            if len(points) < 3:
+                continue
             poly_type = SegIEPolyType.INCLUDE if parent < 0 else SegIEPolyType.EXCLUDE
             poly = ie_polys.add_poly(poly_type)
-            for point in approx[:, 0, :]:
+            for point in points:
                 poly.add_pt(float(point[0]), float(point[1]))
 
         ie_polys.sort()
         return ie_polys
+
+    @staticmethod
+    def _forehead_from_brows(landmarks):
+        # The 68-point set has no hairline. Continue the chin-to-brow direction
+        # by about half that distance, which is the usual brow-to-hairline ratio.
+        brows = landmarks[26:16:-1]
+        brow_mid = np.mean(landmarks[17:27], axis=0)
+        direction = brow_mid - landmarks[8]
+        length = float(np.linalg.norm(direction))
+        if length < 1e-3:
+            return brows.copy()
+        up = direction / length
+        lift = 0.5 * length
+        count = len(brows)
+        raised = np.empty_like(brows)
+        for index, point in enumerate(brows):
+            weight = float(np.sin(np.pi * index / (count - 1)))
+            raised[index] = point + up * lift * weight
+        return raised
 
     @staticmethod
     def landmarks_to_ie_polys(landmarks):
@@ -208,7 +246,7 @@ class SegIEPolys():
         if landmarks.shape != (68, 2):
             raise ValueError(f'landmarks must have shape (68, 2), got {landmarks.shape}')
 
-        contour = np.vstack((landmarks[0:17], landmarks[26:16:-1]))
+        contour = np.vstack((landmarks[0:17], SegIEPolys._forehead_from_brows(landmarks)))
         ie_polys = SegIEPolys()
         poly = ie_polys.add_poly(SegIEPolyType.INCLUDE)
         for x, y in contour:

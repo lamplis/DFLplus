@@ -376,6 +376,8 @@ class QCanvasOperator(QWidget):
         self.qp = QPainter()
         self.initialized = False
         self.last_state = None
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.on_poly_context_menu)
 
     def initialize(self, img, img_look_pt=None, view_scale=None, ie_polys=None, xseg_mask=None, landmarks=None, canvas_config=None ):
         q_img = self.q_img = QImage_from_np(img)
@@ -878,6 +880,36 @@ class QCanvasOperator(QWidget):
         self.mouse_in_widget = False
         self.update_cursor()
 
+    def _delete_op_poly_point(self):
+        if self.op_poly is None or self.mouse_op_poly_pt_id is None:
+            return
+        self.op_poly.remove_pt(self.mouse_op_poly_pt_id)
+        if self.op_poly.get_pts_count() < 3:
+            self.ie_polys.remove_poly(self.op_poly)
+            self.set_op_mode(OpMode.NONE)
+        self.update()
+
+    def _insert_op_poly_point(self):
+        if self.op_poly is None or self.mouse_op_poly_edge_id is None or self.mouse_op_poly_edge_id_pt is None:
+            return
+        edge_img_pt = self.cli_to_img_pt(self.mouse_op_poly_edge_id_pt)
+        self.op_poly.insert_pt(self.mouse_op_poly_edge_id + 1, edge_img_pt)
+        self.update()
+
+    def on_poly_context_menu(self, pos):
+        if not self.initialized or self.op_mode != OpMode.EDIT_PTS or self.drag_type != DragType.NONE:
+            return
+
+        self.update_mouse_info(QPoint_to_np(pos))
+        menu = QMenu(self)
+        if self.mouse_op_poly_pt_id is not None:
+            menu.addAction(QStringDB.menu_delete_pt).triggered.connect(lambda _checked=False: self._delete_op_poly_point())
+        elif self.mouse_op_poly_edge_id is not None:
+            menu.addAction(QStringDB.menu_add_pt).triggered.connect(lambda _checked=False: self._insert_op_poly_point())
+        else:
+            return
+        menu.exec(self.mapToGlobal(pos))
+
     def mousePressEvent(self, ev):
         super().mousePressEvent(ev)
         if not self.initialized:
@@ -916,13 +948,7 @@ class QCanvasOperator(QWidget):
                 if self.mouse_op_poly_pt_id is not None:
                     # Click on point of op_poly
                     if self.pt_edit_mode == PTEditMode.ADD_DEL:
-                        # in mode 'delete point'
-                        self.op_poly.remove_pt(self.mouse_op_poly_pt_id)
-                        if self.op_poly.get_pts_count() < 3:
-                            # not enough points after delete -> remove poly
-                            self.ie_polys.remove_poly (self.op_poly)
-                            self.set_op_mode(OpMode.NONE)
-                        self.update()
+                        self._delete_op_poly_point()
 
                     elif self.drag_type == DragType.NONE:
                         # otherwise -> start drag
@@ -933,10 +959,7 @@ class QCanvasOperator(QWidget):
                 elif self.mouse_op_poly_edge_id is not None:
                     # Click on edge of op_poly
                     if self.pt_edit_mode == PTEditMode.ADD_DEL:
-                        # in mode 'insert new point'
-                        edge_img_pt = self.cli_to_img_pt(self.mouse_op_poly_edge_id_pt)
-                        self.op_poly.insert_pt (self.mouse_op_poly_edge_id+1, edge_img_pt)
-                        self.update()
+                        self._insert_op_poly_point()
                     else:
                         # Otherwise do nothing
                         pass
