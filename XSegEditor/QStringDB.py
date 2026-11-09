@@ -68,7 +68,22 @@ class QStringDB():
         QStringDB.btn_pt_edit_mode_tip = {  'en' : 'Add/delete point mode ( HOLD CTRL )',
                                             'ru' : 'Режим добавления/удаления точек ( удерживайте CTRL )',
                                             'zh' : '点加/删除模式 ( 按住CTRL )',
-                                           }[lang]    
+                                           }[lang]
+
+        QStringDB.btn_mask_to_poly_tip = {  'en' : 'XSeg mask to polygons',
+                                            'ru' : 'Маска XSeg в полигоны',
+                                            'zh' : 'XSeg遮罩转为选区',
+                                         }[lang]
+
+        QStringDB.btn_landmarks_to_poly_tip = { 'en' : 'Landmarks to include polygon',
+                                                'ru' : 'Лендмарки в полигон включения',
+                                                'zh' : '关键点转为包含选区',
+                                              }[lang]
+
+        QStringDB.btn_poly_to_mask_tip = {  'en' : 'Rewrite XSeg mask from polygons',
+                                            'ru' : 'Перезаписать маску XSeg из полигонов',
+                                            'zh' : '用选区重写XSeg遮罩',
+                                         }[lang]    
                                            
         QStringDB.btn_view_lock_center_tip = { 'en' : 'Lock cursor at the center ( HOLD SHIFT )',
                                                'ru' : 'Заблокировать курсор в центре ( удерживайте SHIFT )',

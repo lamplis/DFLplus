@@ -142,7 +142,80 @@ class SegIEPolys():
     def mult_points(self, val):
         for poly in self.polys:
             poly.mult_points(val)
-        
+
+    @staticmethod
+    def _hole_is_mouth(contour, landmarks):
+        inner = np.asarray(landmarks[60:68], np.float32)
+        for point in inner:
+            if cv2.pointPolygonTest(contour, (float(point[0]), float(point[1])), False) >= 0:
+                return True
+
+        moments = cv2.moments(contour)
+        if moments['m00'] == 0:
+            return False
+        centroid = (float(moments['m10'] / moments['m00']), float(moments['m01'] / moments['m00']))
+        hull = cv2.convexHull(np.round(inner).astype(np.int32))
+        return cv2.pointPolygonTest(hull, centroid, False) >= 0
+
+    @staticmethod
+    def mask_to_ie_polys(mask, min_area_ratio=0.002, epsilon_ratio=0.0015, landmarks=None):
+        ie_polys = SegIEPolys()
+        mask = np.asarray(mask)
+        if mask.ndim == 3:
+            mask = mask[..., 0]
+        if mask.size == 0:
+            return ie_polys
+
+        if mask.dtype == np.uint8:
+            binary = (mask >= 128).astype(np.uint8)
+        else:
+            binary = (mask >= 0.5).astype(np.uint8)
+
+        contours, hierarchy = cv2.findContours(binary, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+        if hierarchy is None:
+            return ie_polys
+
+        hierarchy = hierarchy[0]
+        height, width = binary.shape[:2]
+        min_area = float(min_area_ratio) * height * width
+        mouth_landmarks = None
+        if landmarks is not None:
+            landmarks = np.asarray(landmarks, np.float32)
+            if landmarks.shape == (68, 2):
+                mouth_landmarks = landmarks
+
+        for index, contour in enumerate(contours):
+            if abs(cv2.contourArea(contour)) < min_area:
+                continue
+            epsilon = float(epsilon_ratio) * cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, epsilon, True)
+            if len(approx) < 3:
+                continue
+            parent = int(hierarchy[index][3])
+            if parent >= 0 and mouth_landmarks is not None and SegIEPolys._hole_is_mouth(contour, mouth_landmarks):
+                continue
+            poly_type = SegIEPolyType.INCLUDE if parent < 0 else SegIEPolyType.EXCLUDE
+            poly = ie_polys.add_poly(poly_type)
+            for point in approx[:, 0, :]:
+                poly.add_pt(float(point[0]), float(point[1]))
+
+        ie_polys.sort()
+        return ie_polys
+
+    @staticmethod
+    def landmarks_to_ie_polys(landmarks):
+        landmarks = np.asarray(landmarks, np.float32)
+        if landmarks.shape != (68, 2):
+            raise ValueError(f'landmarks must have shape (68, 2), got {landmarks.shape}')
+
+        contour = np.vstack((landmarks[0:17], landmarks[26:16:-1]))
+        ie_polys = SegIEPolys()
+        poly = ie_polys.add_poly(SegIEPolyType.INCLUDE)
+        for x, y in contour:
+            poly.add_pt(float(x), float(y))
+        ie_polys.sort()
+        return ie_polys
+
     @staticmethod
     def load(data=None):
         ie_polys = SegIEPolys()

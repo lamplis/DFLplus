@@ -101,7 +101,35 @@ def apply_xseg(input_path, model_path):
         dflimg.save()
 
 
-        
+def apply_face_parser(input_path, model_file, inner_mouth):
+    if not input_path.exists():
+        raise ValueError(f'{input_path} not found. Please ensure it exists.')
+
+    if not model_file.exists():
+        raise ValueError(f'{model_file} not found. Please ensure it exists.')
+
+    from facelib.FaceParser import FaceParser
+    parser = FaceParser(model_file)
+
+    io.log_info(f'Applying face parser to {input_path.name}/ folder.')
+    images_paths = pathex.get_image_paths(input_path, return_Path_class=True)
+
+    for filepath in io.progress_bar_generator(images_paths, "Processing"):
+        dflimg = DFLIMG.load(filepath)
+        if dflimg is None or not dflimg.has_data():
+            io.log_info(f'{filepath} is not a DFLIMG')
+            continue
+
+        img = cv2_imread(filepath)
+        if img is None:
+            io.log_info(f'{filepath} is not an image')
+            continue
+
+        mask = parser.predict(img, inner_mouth=inner_mouth)
+        dflimg.set_xseg_mask(mask)
+        dflimg.save()
+
+
 def fetch_xseg(input_path):
     if not input_path.exists():
         raise ValueError(f'{input_path} not found. Please ensure it exists.')

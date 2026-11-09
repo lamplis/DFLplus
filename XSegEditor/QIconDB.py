@@ -23,4 +23,7 @@ class QIconDB():
         QIconDB.view_baked = QIcon ( str(icon_path / 'view_baked.png') )
         QIconDB.view_xseg = QIcon ( str(icon_path / 'view_xseg.png') )
         QIconDB.view_xseg_overlay = QIcon ( str(icon_path / 'view_xseg_overlay.png') )
+        QIconDB.mask_to_poly = QIcon ( str(icon_path / 'mask_to_poly.png') )
+        QIconDB.landmarks_to_poly = QIcon ( str(icon_path / 'landmarks_to_poly.png') )
+        QIconDB.poly_to_mask = QIcon ( str(icon_path / 'poly_to_mask.png') )
         

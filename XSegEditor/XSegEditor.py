@@ -198,6 +198,21 @@ class QCanvasControlsLeftBar(QFrame):
         btn_pt_edit_mode.setDefaultAction(self.btn_pt_edit_mode_act)
         btn_pt_edit_mode.setIconSize(QUIConfig.icon_q_size)
         #==============================================
+        btn_mask_to_poly = QToolButton()
+        self.btn_mask_to_poly_act = QActionEx( QIconDB.mask_to_poly, QStringDB.btn_mask_to_poly_tip, shortcut='6', shortcut_in_tooltip=True)
+        btn_mask_to_poly.setDefaultAction(self.btn_mask_to_poly_act)
+        btn_mask_to_poly.setIconSize(QUIConfig.icon_q_size)
+
+        btn_landmarks_to_poly = QToolButton()
+        self.btn_landmarks_to_poly_act = QActionEx( QIconDB.landmarks_to_poly, QStringDB.btn_landmarks_to_poly_tip, shortcut='7', shortcut_in_tooltip=True)
+        btn_landmarks_to_poly.setDefaultAction(self.btn_landmarks_to_poly_act)
+        btn_landmarks_to_poly.setIconSize(QUIConfig.icon_q_size)
+
+        btn_poly_to_mask = QToolButton()
+        self.btn_poly_to_mask_act = QActionEx( QIconDB.poly_to_mask, QStringDB.btn_poly_to_mask_tip, shortcut='8', shortcut_in_tooltip=True)
+        btn_poly_to_mask.setDefaultAction(self.btn_poly_to_mask_act)
+        btn_poly_to_mask.setIconSize(QUIConfig.icon_q_size)
+        #==============================================
 
         controls_bar_frame2_l = QVBoxLayout()
         controls_bar_frame2_l.addWidget ( btn_poly_type_include )
@@ -223,11 +238,21 @@ class QCanvasControlsLeftBar(QFrame):
         controls_bar_frame4.setSizePolicy (QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         controls_bar_frame4.setLayout(controls_bar_frame4_l)
 
+        controls_bar_frame5_l = QVBoxLayout()
+        controls_bar_frame5_l.addWidget ( btn_mask_to_poly )
+        controls_bar_frame5_l.addWidget ( btn_landmarks_to_poly )
+        controls_bar_frame5_l.addWidget ( btn_poly_to_mask )
+        controls_bar_frame5 = QFrame()
+        controls_bar_frame5.setFrameShape(QFrame.Shape.StyledPanel)
+        controls_bar_frame5.setSizePolicy (QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        controls_bar_frame5.setLayout(controls_bar_frame5_l)
+
         controls_bar_l = QVBoxLayout()
         controls_bar_l.setContentsMargins(0,0,0,0)
         controls_bar_l.addWidget(controls_bar_frame2)
         controls_bar_l.addWidget(controls_bar_frame3)
         controls_bar_l.addWidget(controls_bar_frame4)
+        controls_bar_l.addWidget(controls_bar_frame5)
 
         self.setSizePolicy ( QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding )
         self.setLayout(controls_bar_l)
@@ -336,6 +361,9 @@ class QCanvasOperator(QWidget):
         self.cbar.btn_redo_pt_act.triggered.connect ( lambda : self.action_redo_pt() )
 
         self.cbar.btn_delete_poly_act.triggered.connect ( lambda : self.action_delete_poly() )
+        self.cbar.btn_mask_to_poly_act.triggered.connect ( lambda : self.action_mask_to_polys() )
+        self.cbar.btn_landmarks_to_poly_act.triggered.connect ( lambda : self.action_landmarks_to_polys() )
+        self.cbar.btn_poly_to_mask_act.triggered.connect ( lambda : self.action_polys_to_mask() )
 
         self.cbar.btn_pt_edit_mode_act.toggled.connect ( lambda is_checked: self.set_pt_edit_mode( PTEditMode.ADD_DEL if is_checked else PTEditMode.MOVE ) )
         self.cbar.btn_view_lock_center_act.toggled.connect ( lambda is_checked: self.set_view_lock( ViewLock.CENTER if is_checked else ViewLock.NONE ) )
@@ -349,22 +377,13 @@ class QCanvasOperator(QWidget):
         self.initialized = False
         self.last_state = None
 
-    def initialize(self, img, img_look_pt=None, view_scale=None, ie_polys=None, xseg_mask=None, canvas_config=None ):
+    def initialize(self, img, img_look_pt=None, view_scale=None, ie_polys=None, xseg_mask=None, landmarks=None, canvas_config=None ):
         q_img = self.q_img = QImage_from_np(img)
         self.img_pixmap = QPixmap.fromImage(q_img)
-
-        self.xseg_mask_pixmap = None
-        self.xseg_overlay_mask_pixmap = None
-        if xseg_mask is not None:
-            h,w,c = img.shape
-            xseg_mask = cv2.resize(xseg_mask, (w,h), interpolation=cv2.INTER_CUBIC)
-            xseg_mask = imagelib.normalize_channels(xseg_mask, 1)
-            xseg_img = img.astype(np.float32)/255.0
-            xseg_overlay_mask = xseg_img*(1-xseg_mask)*0.5 + xseg_img*xseg_mask
-            xseg_overlay_mask = np.clip(xseg_overlay_mask*255, 0, 255).astype(np.uint8)
-            xseg_mask = np.clip(xseg_mask*255, 0, 255).astype(np.uint8)
-            self.xseg_mask_pixmap = QPixmap.fromImage(QImage_from_np(xseg_mask))
-            self.xseg_overlay_mask_pixmap = QPixmap.fromImage(QImage_from_np(xseg_overlay_mask))
+        self.img_bgr = img
+        self.landmarks = None if landmarks is None else np.asarray(landmarks)
+        self.xseg_mask_dirty = False
+        self._store_xseg_mask_arr(xseg_mask, img)
 
         self.img_size = QSize_to_np (self.img_pixmap.size())
 
@@ -384,6 +403,9 @@ class QCanvasOperator(QWidget):
         self.cbar.btn_poly_color_act_grp.setDisabled(False)
         self.cbar.btn_view_xseg_overlay_mask_act.setDisabled(False)
         self.cbar.btn_poly_type_act_grp.setDisabled(False)
+        self.cbar.btn_mask_to_poly_act.setDisabled(self.xseg_mask_arr is None)
+        self.cbar.btn_landmarks_to_poly_act.setDisabled(self.landmarks is None or self.landmarks.shape != (68, 2))
+        self.cbar.btn_poly_to_mask_act.setDisabled(False)
 
         # Initial vars
         self.current_cursor = None
@@ -610,6 +632,9 @@ class QCanvasOperator(QWidget):
         self.cbar.btn_poly_color_act_grp.setDisabled(True)
         self.cbar.btn_view_xseg_overlay_mask_act.setDisabled(True)
         self.cbar.btn_poly_type_act_grp.setDisabled(True)
+        self.cbar.btn_mask_to_poly_act.setDisabled(True)
+        self.cbar.btn_landmarks_to_poly_act.setDisabled(True)
+        self.cbar.btn_poly_to_mask_act.setDisabled(True)
 
 
     def set_color_scheme_id(self, id):
@@ -744,6 +769,72 @@ class QCanvasOperator(QWidget):
                 self.op_poly.redo()
                 self.update()
 
+    def _store_xseg_mask_arr(self, xseg_mask, img):
+        self.xseg_mask_pixmap = None
+        self.xseg_overlay_mask_pixmap = None
+        self.xseg_mask_arr = None
+        if xseg_mask is None:
+            return
+
+        height, width = img.shape[:2]
+        if xseg_mask.shape[0] != height or xseg_mask.shape[1] != width:
+            xseg_mask = cv2.resize(xseg_mask, (width, height), interpolation=cv2.INTER_CUBIC)
+        self.xseg_mask_arr = imagelib.normalize_channels(xseg_mask, 1).astype(np.float32)
+        self._refresh_xseg_pixmaps(img)
+
+    def _refresh_xseg_pixmaps(self, img):
+        xseg_mask = self.xseg_mask_arr
+        if xseg_mask is None:
+            self.xseg_mask_pixmap = None
+            self.xseg_overlay_mask_pixmap = None
+            return
+
+        xseg_img = img.astype(np.float32) / 255.0
+        if xseg_img.ndim == 2:
+            xseg_img = xseg_img[..., None]
+        xseg_overlay_mask = xseg_img * (1 - xseg_mask) * 0.5 + xseg_img * xseg_mask
+        xseg_overlay_mask = np.clip(xseg_overlay_mask * 255, 0, 255).astype(np.uint8)
+        xseg_mask_u8 = np.clip(xseg_mask * 255, 0, 255).astype(np.uint8)
+        self.xseg_mask_pixmap = QPixmap.fromImage(QImage_from_np(xseg_mask_u8))
+        self.xseg_overlay_mask_pixmap = QPixmap.fromImage(QImage_from_np(xseg_overlay_mask))
+
+    def _replace_ie_polys(self, ie_polys):
+        if self.op_mode == OpMode.DRAW_PTS:
+            self.set_op_mode(OpMode.NONE)
+        self.ie_polys = ie_polys
+        self.set_color_scheme_id(1)
+        self.set_op_mode(OpMode.NONE)
+        self.update_mouse_info()
+        self.update()
+
+    def action_mask_to_polys(self):
+        if not self.initialized or self.xseg_mask_arr is None:
+            return
+        self._replace_ie_polys(SegIEPolys.mask_to_ie_polys(self.xseg_mask_arr, landmarks=self.landmarks))
+
+    def action_landmarks_to_polys(self):
+        if not self.initialized or self.landmarks is None:
+            return
+        try:
+            ie_polys = SegIEPolys.landmarks_to_ie_polys(self.landmarks)
+        except ValueError:
+            return
+        self._replace_ie_polys(ie_polys)
+
+    def action_polys_to_mask(self):
+        if not self.initialized:
+            return
+        if self.op_mode == OpMode.DRAW_PTS:
+            self.set_op_mode(OpMode.NONE)
+        width, height = int(self.img_size[0]), int(self.img_size[1])
+        mask = np.zeros((height, width, 1), np.float32)
+        self.ie_polys.overlay_mask(mask)
+        self.xseg_mask_arr = mask
+        self._refresh_xseg_pixmaps(self.img_bgr)
+        self.xseg_mask_dirty = True
+        self.cbar.btn_mask_to_poly_act.setDisabled(False)
+        self.update()
+
     def action_delete_poly(self):
         if self.op_mode == OpMode.EDIT_PTS and \
             self.drag_type == DragType.NONE and \
@@ -792,7 +883,7 @@ class QCanvasOperator(QWidget):
         if not self.initialized:
             return
 
-        self.update_mouse_info(QPoint_to_np(ev.pos()))
+        self.update_mouse_info(QPoint_to_np(ev.position()))
 
         btn = ev.button()
 
@@ -867,7 +958,7 @@ class QCanvasOperator(QWidget):
         if not self.initialized:
             return
 
-        self.update_mouse_info(QPoint_to_np(ev.pos()))
+        self.update_mouse_info(QPoint_to_np(ev.position()))
 
         btn = ev.button()
 
@@ -889,7 +980,7 @@ class QCanvasOperator(QWidget):
             return
 
         prev_mouse_cli_pt = self.mouse_cli_pt
-        self.update_mouse_info(QPoint_to_np(ev.pos()))
+        self.update_mouse_info(QPoint_to_np(ev.position()))
 
         if self.view_lock == ViewLock.CENTER:
             if npla.norm(self.mouse_cli_pt - prev_mouse_cli_pt) >= 1:
@@ -918,7 +1009,7 @@ class QCanvasOperator(QWidget):
 
         delta = ev.angleDelta()
 
-        cli_pt = QPoint_to_np(ev.pos())
+        cli_pt = QPoint_to_np(ev.position())
 
         if self.drag_type == DragType.NONE:
             sign = np.sign( delta.y() )
@@ -1088,7 +1179,10 @@ class QCanvas(QFrame):
                    btn_undo_pt_act = self.canvas_control_left_bar.btn_undo_pt_act,
                    btn_redo_pt_act = self.canvas_control_left_bar.btn_redo_pt_act,
                    btn_delete_poly_act = self.canvas_control_left_bar.btn_delete_poly_act,
-                   btn_pt_edit_mode_act = self.canvas_control_left_bar.btn_pt_edit_mode_act )
+                   btn_pt_edit_mode_act = self.canvas_control_left_bar.btn_pt_edit_mode_act,
+                   btn_mask_to_poly_act = self.canvas_control_left_bar.btn_mask_to_poly_act,
+                   btn_landmarks_to_poly_act = self.canvas_control_left_bar.btn_landmarks_to_poly_act,
+                   btn_poly_to_mask_act = self.canvas_control_left_bar.btn_poly_to_mask_act )
 
         self.op = QCanvasOperator(cbar)
         self.l = QHBoxLayout()
@@ -1262,11 +1356,12 @@ class MainWindow(QXMainWindow):
 
         ie_polys = dflimg.get_seg_ie_polys()
         xseg_mask = dflimg.get_xseg_mask()
+        landmarks = dflimg.get_dict().get('landmarks', None)
         img = self.load_image(image_path)
         if img is None:
             return False
 
-        self.canvas.op.initialize ( img,  ie_polys=ie_polys, xseg_mask=xseg_mask )
+        self.canvas.op.initialize ( img,  ie_polys=ie_polys, xseg_mask=xseg_mask, landmarks=landmarks )
 
         self.filename_label.setText(f"{image_path.name}")
 
@@ -1279,8 +1374,10 @@ class MainWindow(QXMainWindow):
             dflimg = DFLIMG.load(image_path)
             ie_polys = dflimg.get_seg_ie_polys()
             new_ie_polys = self.canvas.op.get_ie_polys()
+            polys_changed = not new_ie_polys.identical(ie_polys)
+            mask_changed = bool(getattr(self.canvas.op, 'xseg_mask_dirty', False))
 
-            if not new_ie_polys.identical(ie_polys):
+            if polys_changed:
                 prev_has_polys = self.image_paths_has_ie_polys[image_path]
                 self.image_paths_has_ie_polys[image_path] = new_ie_polys.has_polys()
                 new_has_polys = self.image_paths_has_ie_polys[image_path]
@@ -1291,6 +1388,12 @@ class MainWindow(QXMainWindow):
                     self.set_has_ie_polys_count ( self.get_has_ie_polys_count() -1)
 
                 dflimg.set_seg_ie_polys( new_ie_polys )
+
+            if mask_changed:
+                dflimg.set_xseg_mask(self.canvas.op.xseg_mask_arr)
+                self.canvas.op.xseg_mask_dirty = False
+
+            if polys_changed or mask_changed:
                 dflimg.save()
 
         self.filename_label.setText(f"")
