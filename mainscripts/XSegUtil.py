@@ -102,6 +102,187 @@ def apply_xseg(input_path, model_path):
 
 
 FACE_PARSER_POLY_STEP_PX = 2.0
+EYE_TO_JAW_MIN = 0.20
+EYE_ROLL_MAX_DEG = 25.0
+EYE_DIST_MIN = 120.0
+SOFT_LAPLACIAN_MAX = 16.0
+FAR_FACE_DIST = 0.55
+FAR_FACE_MIN_AREA = 8000.0
+STRAY_INCLUDE_MIN_AREA = 8000.0
+STRAY_OUTSIDE_PX = 10.0
+NOSE_HOLE_MIN_AREA = 4000.0
+NOSE_HOLE_MAX_AREA = 20000.0
+NOSE_HOLE_DIST = 0.25
+JAW_OUTSIDE_PX = 220.0
+
+
+def _poly_area(pts):
+    pts = np.asarray(pts, np.float32)
+    if len(pts) < 3:
+        return 0.0
+    return float(abs(cv2.contourArea(pts)))
+
+
+def _poly_centroid(pts):
+    pts = np.asarray(pts, np.float32)
+    moments = cv2.moments(pts)
+    if abs(moments['m00']) < 1e-3:
+        return pts.mean(0)
+    return np.array([moments['m10'] / moments['m00'], moments['m01'] / moments['m00']], np.float32)
+
+
+def _poly_covers_mask(pts, binary):
+    pts = np.asarray(pts, np.float32)
+    if len(pts) < 3:
+        return False
+    height, width = binary.shape[:2]
+    canvas = np.zeros((height, width), np.uint8)
+    cv2.fillPoly(canvas, [np.round(pts).astype(np.int32)], 1)
+    return bool(np.any(canvas.astype(bool) & np.asarray(binary, bool)))
+
+
+def invalid_aligned_reason(dflimg):
+    if dflimg is None or not dflimg.has_data():
+        return 'no-dfl'
+    landmarks = dflimg.get_dict().get('landmarks')
+    if landmarks is None:
+        return 'bad-landmarks'
+    landmarks = np.asarray(landmarks, np.float32)
+    if landmarks.shape != (68, 2):
+        return 'bad-landmarks'
+    left_eye = landmarks[36:42].mean(0)
+    right_eye = landmarks[42:48].mean(0)
+    eye_dist = float(np.linalg.norm(right_eye - left_eye))
+    jaw_width = float(np.linalg.norm(landmarks[16] - landmarks[0]))
+    if jaw_width < 1e-6:
+        return 'bad-landmarks'
+    if eye_dist < EYE_DIST_MIN:
+        return f'small-eyes {eye_dist:.0f}'
+    ratio = eye_dist / jaw_width
+    if ratio < EYE_TO_JAW_MIN:
+        return f'collapsed-eyes {ratio:.3f}'
+    roll = float(np.degrees(np.arctan2(right_eye[1] - left_eye[1], right_eye[0] - left_eye[0])))
+    if abs(roll) >= EYE_ROLL_MAX_DEG:
+        return f'tilted-eyes {roll:.1f}'
+    return None
+
+
+def invalid_image_reason(image_bgr):
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    if variance < SOFT_LAPLACIAN_MAX:
+        return f'soft-image {variance:.1f}'
+    return None
+
+
+def invalid_parsing(parsing, landmarks):
+    from facelib.FaceParser import FACE_PART_CLASSES, MOUTH_CLASS
+
+    landmarks = np.asarray(landmarks, np.float32)
+    if landmarks.shape != (68, 2):
+        return None
+    jaw_width = float(np.linalg.norm(landmarks[16] - landmarks[0]))
+    if jaw_width < 1e-6:
+        return None
+
+    parsing = np.asarray(parsing)
+    face = np.isin(parsing, list(FACE_PART_CLASSES) + [MOUTH_CLASS])
+    height, width = face.shape[:2]
+    dots = np.zeros((height, width), np.uint8)
+    for point in landmarks:
+        x = int(np.clip(round(float(point[0])), 0, width - 1))
+        y = int(np.clip(round(float(point[1])), 0, height - 1))
+        cv2.circle(dots, (x, y), 2, 1, -1)
+    distance = cv2.distanceTransform((1 - dots).astype(np.uint8), cv2.DIST_L2, 3)
+    far = int((face & (distance > FAR_FACE_DIST * jaw_width)).sum())
+    if far >= FAR_FACE_MIN_AREA:
+        return f'far-face {far:.0f}'
+    return None
+
+
+def invalid_parser_polys(ie_polys, landmarks):
+    landmarks = np.asarray(landmarks, np.float32)
+    if landmarks.shape != (68, 2):
+        return None
+    jaw_width = float(np.linalg.norm(landmarks[16] - landmarks[0]))
+    if jaw_width < 1e-6:
+        return None
+
+    from core.imagelib.SegIEPolys import SegIEPolyType
+
+    x0 = float(landmarks[:, 0].min())
+    x1 = float(landmarks[:, 0].max())
+    y1 = float(landmarks[:, 1].max())
+    nose = landmarks[27:36]
+    includes = []
+
+    for poly in ie_polys.polys:
+        pts = poly.get_pts()
+        area = _poly_area(pts)
+        if int(poly.get_type()) == int(SegIEPolyType.INCLUDE):
+            if len(pts) < 3:
+                continue
+            includes.append(pts)
+            contains_landmark = any(cv2.pointPolygonTest(pts, (float(pt[0]), float(pt[1])), False) >= 0 for pt in landmarks)
+            if contains_landmark:
+                continue
+            if area < STRAY_INCLUDE_MIN_AREA:
+                continue
+            centroid = _poly_centroid(pts)
+            outside = (centroid[0] < x0 - STRAY_OUTSIDE_PX or
+                       centroid[0] > x1 + STRAY_OUTSIDE_PX or
+                       centroid[1] > y1 + STRAY_OUTSIDE_PX)
+            if outside:
+                return f'second-face {area:.0f}'
+        elif int(poly.get_type()) == int(SegIEPolyType.EXCLUDE):
+            if area < NOSE_HOLE_MIN_AREA or area >= NOSE_HOLE_MAX_AREA:
+                continue
+            centroid = _poly_centroid(pts)
+            dist = float(np.linalg.norm(nose - centroid, axis=1).min()) / jaw_width
+            if dist <= NOSE_HOLE_DIST:
+                return f'nose-hole {area:.0f}'
+
+    jaw_out = 0.0
+    for index in (0, 16):
+        if not includes:
+            break
+        pt = landmarks[index]
+        closest = max(cv2.pointPolygonTest(pts, (float(pt[0]), float(pt[1])), True) for pts in includes)
+        if closest < 0:
+            jaw_out = max(jaw_out, float(-closest))
+    if jaw_out >= JAW_OUTSIDE_PX:
+        return f'jaw-outside {jaw_out:.0f}'
+    return None
+
+
+def parsing_to_ie_polys(parsing, inner_mouth, landmarks):
+    from core.imagelib.SegIEPolys import SegIEPolys, SegIEPolyType
+    from facelib.FaceParser import FACE_PART_CLASSES, HAIR_CLASS, MOUTH_CLASS
+
+    parsing = np.asarray(parsing)
+    classes = FACE_PART_CLASSES + ((MOUTH_CLASS,) if inner_mouth else ())
+    face = np.isin(parsing, classes)
+    hair = parsing == HAIR_CLASS
+    union = (face | hair).astype(np.float32)
+    ie_polys = SegIEPolys.mask_to_ie_polys(union, step_px=FACE_PARSER_POLY_STEP_PX, landmarks=landmarks)
+
+    kept = []
+    for poly in ie_polys.polys:
+        if int(poly.get_type()) != int(SegIEPolyType.INCLUDE):
+            kept.append(poly)
+            continue
+        if _poly_covers_mask(poly.get_pts(), face):
+            kept.append(poly)
+    ie_polys.polys = kept
+
+    hair_polys = SegIEPolys.mask_to_ie_polys(hair.astype(np.float32), step_px=FACE_PARSER_POLY_STEP_PX)
+    for poly in hair_polys.polys:
+        if int(poly.get_type()) != int(SegIEPolyType.INCLUDE):
+            continue
+        poly.type = SegIEPolyType.EXCLUDE
+        ie_polys.polys.append(poly)
+    ie_polys.sort()
+    return ie_polys
 
 
 def apply_face_parser(input_path, model_file, inner_mouth):
@@ -111,17 +292,28 @@ def apply_face_parser(input_path, model_file, inner_mouth):
     if not model_file.exists():
         raise ValueError(f'{model_file} not found. Please ensure it exists.')
 
-    from core.imagelib import SegIEPolys
     from facelib.FaceParser import FaceParser
     parser = FaceParser(model_file)
+
+    failed_dir = input_path.parent / 'aligned_failed'
+    failed_dir.mkdir(parents=True, exist_ok=True)
+
+    def move_failed(filepath, reason):
+        dest = failed_dir / filepath.name
+        if dest.exists():
+            io.log_info(f'{filepath.name} not moved, {dest.name} already exists ({reason})')
+        else:
+            filepath.rename(dest)
+            io.log_info(f'{filepath.name} -> aligned_failed ({reason})')
 
     io.log_info(f'Applying face parser polygons to {input_path.name}/ folder.')
     images_paths = pathex.get_image_paths(input_path, return_Path_class=True)
 
     for filepath in io.progress_bar_generator(images_paths, "Processing"):
         dflimg = DFLIMG.load(filepath)
-        if dflimg is None or not dflimg.has_data():
-            io.log_info(f'{filepath} is not a DFLIMG')
+        reason = invalid_aligned_reason(dflimg)
+        if reason is not None:
+            move_failed(filepath, reason)
             continue
 
         img = cv2_imread(filepath)
@@ -129,11 +321,22 @@ def apply_face_parser(input_path, model_file, inner_mouth):
             io.log_info(f'{filepath} is not an image')
             continue
 
-        mask = parser.predict(img, inner_mouth=inner_mouth)
+        image_reason = invalid_image_reason(img)
+        if image_reason is not None:
+            move_failed(filepath, image_reason)
+            continue
+
+        parsing = parser.predict_parsing(img)
         landmarks = dflimg.get_dict().get('landmarks')
-        ie_polys = SegIEPolys.mask_to_ie_polys(mask, step_px=FACE_PARSER_POLY_STEP_PX, landmarks=landmarks)
+        ie_polys = parsing_to_ie_polys(parsing, inner_mouth, landmarks)
+        parse_reason = invalid_parsing(parsing, landmarks)
+        poly_reason = invalid_parser_polys(ie_polys, landmarks)
         dflimg.set_seg_ie_polys(ie_polys)
         dflimg.save()
+        if parse_reason is not None:
+            move_failed(filepath, parse_reason)
+        elif poly_reason is not None:
+            move_failed(filepath, poly_reason)
 
 
 def polys_to_xseg_mask(input_path):

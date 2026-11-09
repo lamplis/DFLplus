@@ -259,4 +259,20 @@ class QSubprocessor(object):
             self.q_timer.stop()
             self.q_timer = None
             self.on_clients_finalized()
-            
+
+    def stop(self):
+        timer = getattr(self, 'q_timer', None)
+        if timer is not None:
+            timer.stop()
+            self.q_timer = None
+        for cli in getattr(self, 'clis', [])[:]:
+            try:
+                cli.s2c.put({'op': 'close'})
+            except Exception:
+                pass
+            try:
+                cli.kill()
+            except Exception:
+                pass
+        self.clis = []
+ 

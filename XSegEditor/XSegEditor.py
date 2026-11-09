@@ -1216,15 +1216,14 @@ class QCanvas(QFrame):
         self.setLayout(self.l)
 
 class LoaderQSubprocessor(QSubprocessor):
-    def __init__(self, image_paths, q_label, q_progressbar, on_finish_func ):
+    def __init__(self, image_paths, image_paths_has_ie_polys, q_label, q_progressbar, on_finish_func ):
 
-        self.image_paths = image_paths
-        self.image_paths_len = len(image_paths)
+        # Navigation pops MainWindow.image_paths while this scan is running.
+        # Keep a stable copy so an index taken at the start stays valid.
+        self.image_paths = list(image_paths)
+        self.image_paths_len = len(self.image_paths)
         self.idxs = [*range(self.image_paths_len)]
-
-        self.filtered_image_paths = self.image_paths.copy()
-
-        self.image_paths_has_ie_polys = { image_path : False for image_path in self.image_paths }
+        self.image_paths_has_ie_polys = image_paths_has_ie_polys
 
         self.q_label = q_label
         self.q_progressbar = q_progressbar
@@ -1246,17 +1245,16 @@ class LoaderQSubprocessor(QSubprocessor):
         return None
 
     def on_clients_finalized(self):
-        self.on_finish_func([x for x in self.filtered_image_paths if x is not None], self.image_paths_has_ie_polys)
+        self.on_finish_func()
 
     def on_data_return (self, host_dict, data):
         self.idxs.insert(0, data[0])
 
     def on_result (self, host_dict, data, result):
         idx, has_dflimg, has_ie_polys = result
-
-        if not has_dflimg:
-            self.filtered_image_paths[idx] = None
-        self.image_paths_has_ie_polys[self.image_paths[idx]] = has_ie_polys
+        path = self.image_paths[idx]
+        if path not in self.image_paths_has_ie_polys:
+            self.image_paths_has_ie_polys[path] = bool(has_dflimg and has_ie_polys)
 
         self.done_count += 1
         if self.q_progressbar is not None:
@@ -1292,45 +1290,37 @@ class MainWindow(QXMainWindow):
 
         self.initialize_ui()
 
-        # Loader
-        self.loading_frame = QFrame(self.main_canvas_frame)
-        self.loading_frame.setAutoFillBackground(True)
-        self.loading_frame.setFrameShape(QFrame.Shape.StyledPanel)
-        self.loader_label = QLabel()
-        self.loader_progress_bar = QProgressBar()
-
-        intro_image = QLabel()
-        intro_image.setPixmap( QPixmap.fromImage(QImageDB.intro) )
-
-        intro_image_frame_l = QVBoxLayout()
-        intro_image_frame_l.addWidget(intro_image, alignment=Qt.AlignmentFlag.AlignCenter)
-        intro_image_frame = QFrame()
-        intro_image_frame.setSizePolicy (QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        intro_image_frame.setLayout(intro_image_frame_l)
-
-        loading_frame_l = QVBoxLayout()
-        loading_frame_l.addWidget (intro_image_frame)
-        loading_frame_l.addWidget (self.loader_label)
-        loading_frame_l.addWidget (self.loader_progress_bar)
-        self.loading_frame.setLayout(loading_frame_l)
-
-        self.loader_subprocessor = LoaderQSubprocessor( image_paths=pathex.get_image_paths(input_dirpath, return_Path_class=True),
-                                                        q_label=self.loader_label,
-                                                        q_progressbar=self.loader_progress_bar,
-                                                        on_finish_func=self.on_loader_finish )
-
-
-    def on_loader_finish(self, image_paths, image_paths_has_ie_polys):
+        self.image_paths = pathex.get_image_paths(input_dirpath, return_Path_class=True)
         self.image_paths_done = []
-        self.image_paths = image_paths
-        self.image_paths_has_ie_polys = image_paths_has_ie_polys
-        self.set_has_ie_polys_count ( len([ 1 for x in self.image_paths_has_ie_polys if self.image_paths_has_ie_polys[x] == True]) )
-        self.loading_frame.hide()
-        self.loading_frame = None
+        self.image_paths_has_ie_polys = {}
+        self.set_has_ie_polys_count(0)
+        self.loader_subprocessor = None
 
-        self.process_next_image(first_initialization=True)
+        self.loader_progress_bar.setRange(0, len(self.image_paths))
+        self.loader_progress_bar.setValue(0)
+        if len(self.image_paths) == 0:
+            self.loader_label.hide()
+            self.loader_progress_bar.hide()
+        else:
+            QTimer.singleShot(0, lambda: self.process_next_image(first_initialization=True))
+            self.loader_subprocessor = LoaderQSubprocessor( image_paths=self.image_paths,
+                                                            image_paths_has_ie_polys=self.image_paths_has_ie_polys,
+                                                            q_label=self.loader_label,
+                                                            q_progressbar=self.loader_progress_bar,
+                                                            on_finish_func=self.on_loader_finish )
+
+
+    def on_loader_finish(self):
+        self.set_has_ie_polys_count(sum(1 for has_polys in self.image_paths_has_ie_polys.values() if has_polys))
+        self.loader_label.hide()
+        self.loader_progress_bar.hide()
+        self.loader_subprocessor = None
 
     def closeEvent(self, ev):
+        loader = self.loader_subprocessor
+        self.loader_subprocessor = None
+        if loader is not None:
+            loader.stop()
         self.cfg_dict['geometry'] = self.saveGeometry().data()
         self.cfg_path.write_bytes( pickle.dumps(self.cfg_dict) )
 
@@ -1369,8 +1359,16 @@ class MainWindow(QXMainWindow):
         self.image_bar.update_images(prev_imgs, next_imgs)
 
 
+    def image_has_ie_polys(self, image_path):
+        known = self.image_paths_has_ie_polys.get(image_path)
+        if known is None:
+            dflimg = DFLIMG.load(image_path)
+            known = bool(dflimg and dflimg.has_data() and dflimg.get_seg_ie_polys().has_polys())
+            self.image_paths_has_ie_polys[image_path] = known
+        return known
+
     def canvas_initialize(self, image_path, only_has_polys=False):
-        if only_has_polys and not self.image_paths_has_ie_polys[image_path]:
+        if only_has_polys and not self.image_has_ie_polys(image_path):
             return False
 
         dflimg = DFLIMG.load(image_path)
@@ -1401,7 +1399,7 @@ class MainWindow(QXMainWindow):
             mask_changed = bool(getattr(self.canvas.op, 'xseg_mask_dirty', False))
 
             if polys_changed:
-                prev_has_polys = self.image_paths_has_ie_polys[image_path]
+                prev_has_polys = self.image_paths_has_ie_polys.get(image_path, False)
                 self.image_paths_has_ie_polys[image_path] = new_ie_polys.has_polys()
                 new_has_polys = self.image_paths_has_ie_polys[image_path]
 
@@ -1465,6 +1463,7 @@ class MainWindow(QXMainWindow):
                 break
             if self.canvas_initialize(self.image_paths[0], only_has_polys):
                 break
+            step = 1
 
         self.update_cached_images()
         self.update_preview_bar()
@@ -1534,12 +1533,18 @@ class MainWindow(QXMainWindow):
         self.filename_label.setFont(label_font)
 
         self.has_ie_polys_count_label = QLabel()
+        self.loader_label = QLabel()
+        self.loader_progress_bar = QProgressBar()
+        self.loader_progress_bar.setFixedWidth(120)
+        self.loader_progress_bar.setTextVisible(False)
 
         status_frame_l = QHBoxLayout()
         status_frame_l.setContentsMargins(0,0,0,0)
         status_frame_l.addWidget ( QLabel(), alignment=Qt.AlignmentFlag.AlignCenter)
         status_frame_l.addWidget (self.filename_label, alignment=Qt.AlignmentFlag.AlignCenter)
         status_frame_l.addWidget (self.has_ie_polys_count_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        status_frame_l.addWidget (self.loader_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        status_frame_l.addWidget (self.loader_progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
         status_frame = QFrame()
         status_frame.setLayout(status_frame_l)
 
