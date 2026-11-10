@@ -129,6 +129,9 @@ class DFLJPG(object):
     def load(filename, loader_func=None):
         try:
             inst = DFLJPG.load_raw (filename, loader_func=loader_func)
+            if not any(chunk['name'] == 'EOI' for chunk in inst.chunks):
+                io.log_err(f"Truncated JPEG (missing EOI): {filename}")
+                return None
             inst.dfl_dict = {}
 
             for chunk in inst.chunks:

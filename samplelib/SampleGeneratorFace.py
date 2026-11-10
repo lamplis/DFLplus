@@ -124,16 +124,23 @@ class SampleGeneratorFace(SampleGeneratorBase):
             t = time.time()
             for n_batch in range(bs):
                 sample_idx = indexes[n_batch]
-                sample = samples[sample_idx]
+                ct_idx = ct_indexes[n_batch] if ct_indexes is not None else None
 
-                ct_sample = None
-                if ct_samples is not None:
-                    ct_sample = ct_samples[ct_indexes[n_batch]]
+                for attempt in range(8):
+                    sample = samples[sample_idx]
+                    ct_sample = ct_samples[ct_idx] if ct_samples is not None else None
 
-                try:
-                    x, = SampleProcessor.process ([sample], self.sample_process_options, self.output_sample_types, self.debug, ct_sample=ct_sample)
-                except:
-                    raise Exception ("Exception occured in sample %s. Error: %s" % (sample.filename, traceback.format_exc() ) )
+                    try:
+                        x, = SampleProcessor.process ([sample], self.sample_process_options, self.output_sample_types, self.debug, ct_sample=ct_sample)
+                        break
+                    except:
+                        ct_name = f" ct_sample {ct_sample.filename}" if ct_sample is not None else ""
+                        if attempt == 7:
+                            raise Exception ("Exception occured in sample %s. Error: %s" % (sample.filename, traceback.format_exc() ) )
+                        io.log_err(f"Skipping unreadable sample {sample.filename}{ct_name}")
+                        sample_idx = index_host.multi_get(1)[0]
+                        if ct_index_host is not None:
+                            ct_idx = ct_index_host.multi_get(1)[0]
 
                 if batches is None:
                     batches = [ [] for _ in range(len(x)) ]
