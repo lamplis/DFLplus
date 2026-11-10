@@ -93,7 +93,12 @@ class QStringDB():
         QStringDB.menu_delete_pt = { 'en' : 'Delete point',
                                      'ru' : 'Удалить точку',
                                      'zh' : '删除点',
-                                   }[lang]    
+                                   }[lang]
+
+        QStringDB.menu_delete_pts = { 'en' : 'Delete selected points',
+                                      'ru' : 'Удалить выбранные точки',
+                                      'zh' : '删除选中的点',
+                                    }[lang]    
                                            
         QStringDB.btn_view_lock_center_tip = { 'en' : 'Lock cursor at the center ( HOLD SHIFT )',
                                                'ru' : 'Заблокировать курсор в центре ( удерживайте SHIFT )',

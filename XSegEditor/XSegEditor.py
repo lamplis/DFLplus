@@ -44,6 +44,9 @@ class DragType(IntEnum):
     NONE = 0
     IMAGE_LOOK = 1
     POLY_PT = 2
+    PT_BOX = 3
+
+PT_BOX_MIN_PX = 4.0
 
 class ViewLock(IntEnum):
     NONE = 0
@@ -414,6 +417,8 @@ class QCanvasOperator(QWidget):
         self.mouse_hull_poly = None
         self.mouse_wire_poly = None
         self.drag_type = DragType.NONE
+        self.box_pt_ids = []
+        self.box_cli_start = np.zeros((2,), np.float32)
         self.mouse_cli_pt = np.zeros((2,), np.float32 )
 
         # Initial state
@@ -544,6 +549,7 @@ class QCanvasOperator(QWidget):
     # ====================================================================================
     # ====================================================================================
     def set_op_mode(self, op_mode, op_poly=None):
+        self.box_pt_ids = []
         if not hasattr(self,'op_mode'):
             self.op_mode = None
             self.op_poly = None
@@ -889,6 +895,34 @@ class QCanvasOperator(QWidget):
             self.set_op_mode(OpMode.NONE)
         self.update()
 
+    def _pt_ids_in_box(self):
+        if self.op_poly is None:
+            return []
+        x0, y0 = self.box_cli_start
+        x1, y1 = self.mouse_cli_pt
+        left, right = (x0, x1) if x0 <= x1 else (x1, x0)
+        top, bottom = (y0, y1) if y0 <= y1 else (y1, y0)
+        ids = []
+        for pt_id, img_pt in enumerate(self.op_poly.get_pts()):
+            cli_pt = self.img_to_cli_pt(img_pt)
+            if left <= cli_pt[0] <= right and top <= cli_pt[1] <= bottom:
+                ids.append(pt_id)
+        return ids
+
+    def _delete_selected_points(self):
+        if self.op_poly is None or len(self.box_pt_ids) == 0:
+            return
+        for pt_id in sorted(self.box_pt_ids, reverse=True):
+            if 0 <= pt_id < self.op_poly.get_pts_count():
+                self.op_poly.remove_pt(pt_id)
+        self.box_pt_ids = []
+        if self.op_poly.get_pts_count() < 3:
+            self.ie_polys.remove_poly(self.op_poly)
+            self.set_op_mode(OpMode.NONE)
+        else:
+            self.update_mouse_info()
+        self.update()
+
     def _insert_op_poly_point(self):
         if self.op_poly is None or self.mouse_op_poly_edge_id is None or self.mouse_op_poly_edge_id_pt is None:
             return
@@ -902,7 +936,9 @@ class QCanvasOperator(QWidget):
 
         self.update_mouse_info(QPoint_to_np(pos))
         menu = QMenu(self)
-        if self.mouse_op_poly_pt_id is not None:
+        if len(self.box_pt_ids) != 0:
+            menu.addAction(QStringDB.menu_delete_pts).triggered.connect(lambda _checked=False: self._delete_selected_points())
+        elif self.mouse_op_poly_pt_id is not None:
             menu.addAction(QStringDB.menu_delete_pt).triggered.connect(lambda _checked=False: self._delete_op_poly_point())
         elif self.mouse_op_poly_edge_id is not None:
             menu.addAction(QStringDB.menu_add_pt).triggered.connect(lambda _checked=False: self._insert_op_poly_point())
@@ -952,6 +988,7 @@ class QCanvasOperator(QWidget):
 
                     elif self.drag_type == DragType.NONE:
                         # otherwise -> start drag
+                        self.box_pt_ids = []
                         self.drag_type = DragType.POLY_PT
                         self.drag_cli_pt     = self.mouse_cli_pt
                         self.drag_poly_pt_id = self.mouse_op_poly_pt_id
@@ -963,6 +1000,10 @@ class QCanvasOperator(QWidget):
                     else:
                         # Otherwise do nothing
                         pass
+                elif self.pt_edit_mode == PTEditMode.MOVE and self.drag_type == DragType.NONE:
+                    self.drag_type = DragType.PT_BOX
+                    self.box_cli_start = self.mouse_cli_pt.copy()
+                    self.box_pt_ids = []
                 else:
                     # other cases -> unselect poly
                     self.set_op_mode(OpMode.NONE)
@@ -990,6 +1031,14 @@ class QCanvasOperator(QWidget):
                 if self.drag_type == DragType.POLY_PT:
                     self.drag_type = DragType.NONE
                     self.update()
+                elif self.drag_type == DragType.PT_BOX:
+                    moved = float(npla.norm(self.mouse_cli_pt - self.box_cli_start))
+                    self.drag_type = DragType.NONE
+                    if moved < PT_BOX_MIN_PX:
+                        self.set_op_mode(OpMode.NONE)
+                    else:
+                        self.box_pt_ids = self._pt_ids_in_box()
+                        self.update()
 
         elif btn == Qt.MouseButton.MiddleButton:
             if self.drag_type == DragType.IMAGE_LOOK:
@@ -1022,6 +1071,9 @@ class QCanvasOperator(QWidget):
             if self.drag_type == DragType.POLY_PT:
                 delta_pt = self.cli_to_img_pt(self.mouse_cli_pt) - self.cli_to_img_pt(self.drag_cli_pt)
                 self.op_poly.set_point(self.drag_poly_pt_id, self.drag_poly_pt + delta_pt)
+                self.update()
+            elif self.drag_type == DragType.PT_BOX:
+                self.box_pt_ids = self._pt_ids_in_box()
                 self.update()
 
     def wheelEvent(self, ev):
@@ -1123,6 +1175,9 @@ class QCanvasOperator(QWidget):
                             # Circle around poly point
                             selected_pt_path.addEllipse(q_cli_pt, pt_rad_x2, pt_rad_x2)
 
+                        if self.op_mode == OpMode.EDIT_PTS and pt_id in self.box_pt_ids:
+                            selected_pt_path.addEllipse(q_cli_pt, pt_rad_x2, pt_rad_x2)
+
 
                 if poly == op_poly:
                     if op_mode == OpMode.DRAW_PTS:
@@ -1177,6 +1232,13 @@ class QCanvasOperator(QWidget):
                                 QPointF_from_np(pt_remove_cli_pt + np.float32([pt_rad_x2,pt_rad_x2])))
                     qp.drawLine(QPointF_from_np(pt_remove_cli_pt + np.float32([-pt_rad_x2,pt_rad_x2])),
                                 QPointF_from_np(pt_remove_cli_pt + np.float32([pt_rad_x2,-pt_rad_x2])))
+
+        if self.drag_type == DragType.PT_BOX:
+            x0, y0 = self.box_cli_start
+            x1, y1 = self.mouse_cli_pt
+            qp.setPen(self.get_current_color_scheme().poly_outline_solid_pen)
+            qp.setBrush(QBrush())
+            qp.drawRect(QRectF(float(min(x0, x1)), float(min(y0, y1)), float(abs(x1 - x0)), float(abs(y1 - y0))))
 
         qp.end()
 
@@ -1409,6 +1471,10 @@ class MainWindow(QXMainWindow):
                     self.set_has_ie_polys_count ( self.get_has_ie_polys_count() -1)
 
                 dflimg.set_seg_ie_polys( new_ie_polys )
+                if new_ie_polys.has_polys():
+                    dflimg.get_dict()['seg_ie_polys_manual'] = True
+                else:
+                    dflimg.get_dict().pop('seg_ie_polys_manual', None)
 
             if mask_changed:
                 dflimg.set_xseg_mask(self.canvas.op.xseg_mask_arr)

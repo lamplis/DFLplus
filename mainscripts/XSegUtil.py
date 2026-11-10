@@ -101,7 +101,7 @@ def apply_xseg(input_path, model_path):
         dflimg.save()
 
 
-FACE_PARSER_POLY_STEP_PX = 2.0
+FACE_PARSER_POLY_STEP_PX = 16.0
 EYE_TO_JAW_MIN = 0.20
 EYE_ROLL_MAX_DEG = 25.0
 EYE_DIST_MIN = 120.0
@@ -114,6 +114,9 @@ NOSE_HOLE_MIN_AREA = 4000.0
 NOSE_HOLE_MAX_AREA = 20000.0
 NOSE_HOLE_DIST = 0.25
 JAW_OUTSIDE_PX = 220.0
+# Parser edges at 16 px stay under 18. The hand-drawn includes sit near 20.
+MANUAL_EDGE_MEDIAN_PX = 19.0
+MANUAL_POLY_KEY = 'seg_ie_polys_manual'
 
 
 def _poly_area(pts):
@@ -139,6 +142,27 @@ def _poly_covers_mask(pts, binary):
     canvas = np.zeros((height, width), np.uint8)
     cv2.fillPoly(canvas, [np.round(pts).astype(np.int32)], 1)
     return bool(np.any(canvas.astype(bool) & np.asarray(binary, bool)))
+
+
+def _include_edge_median(pts):
+    pts = np.asarray(pts, np.float32)
+    if len(pts) < 3:
+        return 0.0
+    return float(np.median(np.linalg.norm(np.roll(pts, -1, axis=0) - pts, axis=1)))
+
+
+def manual_polys(dflimg):
+    if dflimg is None or not dflimg.has_data() or not dflimg.has_seg_ie_polys():
+        return False
+    if dflimg.get_dict().get(MANUAL_POLY_KEY):
+        return True
+    from core.imagelib.SegIEPolys import SegIEPolyType
+    for poly in dflimg.get_seg_ie_polys().polys:
+        if int(poly.get_type()) != int(SegIEPolyType.INCLUDE):
+            continue
+        if _include_edge_median(poly.get_pts()) >= MANUAL_EDGE_MEDIAN_PX:
+            return True
+    return False
 
 
 def invalid_aligned_reason(dflimg):
@@ -311,6 +335,9 @@ def apply_face_parser(input_path, model_file, inner_mouth):
 
     for filepath in io.progress_bar_generator(images_paths, "Processing"):
         dflimg = DFLIMG.load(filepath)
+        if manual_polys(dflimg):
+            io.log_info(f'{filepath.name} kept, manual polygons')
+            continue
         reason = invalid_aligned_reason(dflimg)
         if reason is not None:
             move_failed(filepath, reason)
@@ -331,6 +358,7 @@ def apply_face_parser(input_path, model_file, inner_mouth):
         ie_polys = parsing_to_ie_polys(parsing, inner_mouth, landmarks)
         parse_reason = invalid_parsing(parsing, landmarks)
         poly_reason = invalid_parser_polys(ie_polys, landmarks)
+        dflimg.get_dict().pop(MANUAL_POLY_KEY, None)
         dflimg.set_seg_ie_polys(ie_polys)
         dflimg.save()
         if parse_reason is not None:
@@ -447,6 +475,7 @@ def remove_xseg_labels(input_path):
             continue
 
         if dflimg.has_seg_ie_polys():
+            dflimg.get_dict().pop(MANUAL_POLY_KEY, None)
             dflimg.set_seg_ie_polys(None)
             dflimg.save()            
             files_processed += 1
